@@ -29,6 +29,16 @@ jobs:
           cache: 'npm'
           cache-dependency-path: cluster/package-lock.json
 
+      - name: Install Node dependencies
+        working-directory: cluster
+        run: |
+          npm ci
+
+      - name: Build frontend
+        working-directory: cluster
+        run: |
+          npm run build
+
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
@@ -41,15 +51,28 @@ jobs:
           pip install -r requirements.txt
           pip install pyinstaller
 
+      - name: Copy frontend to backend
+        shell: pwsh
+        run: |
+          if (Test-Path cluster-End/static) {
+            Remove-Item -Recurse -Force cluster-End/static
+          }
+          Copy-Item -Recurse cluster/dist cluster-End/static
+
       - name: Build executable
         working-directory: cluster-End
-        run: python build.py
+        run: python build-win.py
+
+      - name: List dist directory
+        shell: pwsh
+        run: |
+          Get-ChildItem -Path cluster-End/dist -Recurse
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: cluster-app-windows-amd64
-          path: cluster-End/dist/cluster-app-windows-*.exe
+          path: cluster-End/dist/*.exe
 
   build-macos-intel:
     runs-on: macos-13
@@ -64,6 +87,16 @@ jobs:
           cache: 'npm'
           cache-dependency-path: cluster/package-lock.json
 
+      - name: Install Node dependencies
+        working-directory: cluster
+        run: |
+          npm ci
+
+      - name: Build frontend
+        working-directory: cluster
+        run: |
+          npm run build
+
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
@@ -76,15 +109,24 @@ jobs:
           pip install -r requirements.txt
           pip install pyinstaller
 
+      - name: Copy frontend to backend
+        run: |
+          rm -rf cluster-End/static
+          cp -r cluster/dist cluster-End/static
+
       - name: Build executable
         working-directory: cluster-End
-        run: python build.py
+        run: python build-macos.py amd64
+
+      - name: List dist directory
+        run: |
+          ls -la cluster-End/dist/
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: cluster-app-macos-amd64
-          path: cluster-End/dist/cluster-app-macos-*
+          path: cluster-End/dist/cluster-app-macos-amd64
 
   build-macos-arm:
     runs-on: macos-latest
@@ -99,6 +141,16 @@ jobs:
           cache: 'npm'
           cache-dependency-path: cluster/package-lock.json
 
+      - name: Install Node dependencies
+        working-directory: cluster
+        run: |
+          npm ci
+
+      - name: Build frontend
+        working-directory: cluster
+        run: |
+          npm run build
+
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
@@ -111,15 +163,24 @@ jobs:
           pip install -r requirements.txt
           pip install pyinstaller
 
+      - name: Copy frontend to backend
+        run: |
+          rm -rf cluster-End/static
+          cp -r cluster/dist cluster-End/static
+
       - name: Build executable
         working-directory: cluster-End
-        run: python build.py
+        run: python build-macos.py arm64
+
+      - name: List dist directory
+        run: |
+          ls -la cluster-End/dist/
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: cluster-app-macos-arm64
-          path: cluster-End/dist/cluster-app-macos-*
+          path: cluster-End/dist/cluster-app-macos-arm64
 
   release:
     needs: [build-windows, build-macos-intel, build-macos-arm]
