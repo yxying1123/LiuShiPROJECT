@@ -1,0 +1,44 @@
+# Dependencies
+cluster/node_modules/
+cluster-End/venv/
+cluster-End/env/
+cluster-End/__pycache__/
+
+# Build outputs
+cluster/build/
+cluster/dist/
+cluster-End/build/
+cluster-End/dist/
+cluster-End/static/
+
+# Python cache
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/*.pyd
+.Python
+*.so
+
+# Storage and output data
+cluster-End/storage/
+cluster-End/output/
+cluster-End/figures/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Local env files
+.env
+.env.local
+.env.*.local
