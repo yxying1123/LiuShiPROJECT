@@ -1,0 +1,16 @@
+fastapi
+python-multipart
+pandas
+numpy
+umap-learn
+seaborn
+uvicorn
+scikit-learn
+scipy
+igraph
+leidenalg
+flowkit
+
+# Build dependencies (uncomment for local builds)
+# pyinstaller
+# pyinstaller-hooks-contrib

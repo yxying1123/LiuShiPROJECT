@@ -1,0 +1,83 @@
+import React from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { X } from 'lucide-react';
+import FileUpload from './FileUpload';
+
+const UploadModal = ({
+  isOpen,
+  onClose,
+  files,
+  onFilesChange,
+  onConfirm,
+  confirmLabel = '确认上传',
+}) => {
+  const confirmDisabled = !files || files.length === 0;
+  return (
+    <AnimatePresence>
+      {isOpen && (
+        <motion.div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          onClick={onClose}
+        >
+          <motion.div
+            className="relative w-full max-w-2xl rounded-2xl bg-white shadow-2xl border border-slate-200"
+            initial={{ scale: 0.9, opacity: 0, y: 20 }}
+            animate={{ scale: 1, opacity: 1, y: 0 }}
+            exit={{ scale: 0.9, opacity: 0, y: 20 }}
+            transition={{ type: "spring", damping: 25, stiffness: 300 }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-slate-200 p-6">
+              <h3 className="text-xl font-semibold bg-gradient-to-r from-amber-600 to-rose-600 bg-clip-text text-transparent">
+                上传文件
+              </h3>
+              <button
+                onClick={onClose}
+                className="rounded-full p-2 hover:bg-slate-100 transition-colors"
+              >
+                <X className="h-5 w-5 text-slate-500" />
+              </button>
+            </div>
+            
+            <div className="p-6 max-h-[70vh] overflow-y-auto">
+              <FileUpload 
+                files={files} 
+                onFilesChange={onFilesChange}
+                multiple
+                acceptedTypes=".csv,.txt,.fcs"
+              />
+            </div>
+            {onConfirm && (
+              <div className="flex items-center justify-end gap-3 border-t border-slate-200 px-6 py-4">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="inline-flex items-center justify-center rounded-full border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+                >
+                  取消
+                </button>
+                <button
+                  type="button"
+                  onClick={onConfirm}
+                  disabled={confirmDisabled}
+                  className={`inline-flex items-center justify-center rounded-full px-4 py-2 text-sm font-medium transition ${
+                    confirmDisabled
+                      ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                      : 'bg-slate-900 text-white hover:bg-slate-800'
+                  }`}
+                >
+                  {confirmLabel}
+                </button>
+              </div>
+            )}
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+};
+
+export default UploadModal;
