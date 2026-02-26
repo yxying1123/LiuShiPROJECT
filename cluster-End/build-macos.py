@@ -101,6 +101,7 @@ def build_executable(arch):
         "--collect-all", "umap",
         "--collect-all", "numba",
         "--collect-all", "pynndescent",
+        "--collect-all", "flowkit",
         # Main entry point
         os.path.join(backend_dir, "launch.py"),
     ]
