@@ -48,16 +48,22 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Include all routes from main app
-# We need to manually add each route because we can't easily merge routers
+# Import route handlers from main
 from main import (
-    root, list_files, upload_files, delete_file, download_file,
+    list_files, upload_files, delete_file, download_file,
     files_metadata, files_metadata_all, upload_file, upload_xy,
     upload_flow_merge, select, cluster, heatmap_cluster_tree_points
 )
 
-# Register all routes
-app.get("/")(root)
+# Mount static files (frontend) - BEFORE registering routes
+static_dir = BASE_DIR / "static"
+static_exists = static_dir.exists() and (static_dir / "index.html").exists()
+
+if static_exists:
+    # Mount static files at /static
+    app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+
+# Register API routes (specific routes first)
 app.get("/files")(list_files)
 app.post("/files/upload")(upload_files)
 app.delete("/files/{filename}")(delete_file)
@@ -75,16 +81,23 @@ app.post("/heatmap/cluster-tree/points")(heatmap_cluster_tree_points)
 from main import http_exception_handler
 app.exception_handler(Exception)(http_exception_handler)
 
-# Mount static files (frontend)
-static_dir = BASE_DIR / "static"
-if static_dir.exists():
-    app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+if static_exists:
+    # Serve index.html for root path
+    @app.get("/")
+    async def serve_root():
+        """Serve the frontend index.html at root path."""
+        return FileResponse(str(static_dir / "index.html"))
 
+    # Serve index.html for all other paths (SPA client-side routing)
     @app.get("/{full_path:path}")
     async def serve_frontend(full_path: str):
-        """Serve the frontend SPA."""
-        # API routes should be handled by the registered routes above
-        # This catches all other paths and serves the index.html
+        """Serve the frontend SPA for client-side routing."""
+        # Skip API paths (should have been caught by API routes above)
+        if full_path.startswith("files") or full_path.startswith("upload") or \
+           full_path.startswith("select") or full_path.startswith("cluster") or \
+           full_path.startswith("heatmap"):
+            return {"error": "Not found"}
+
         file_path = static_dir / full_path
 
         # If the file exists and is not a directory, serve it
@@ -92,12 +105,12 @@ if static_dir.exists():
             return FileResponse(str(file_path))
 
         # Otherwise, serve index.html for client-side routing
-        index_path = static_dir / "index.html"
-        if index_path.exists():
-            return FileResponse(str(index_path))
-
-        return {"error": "Frontend not found"}
+        return FileResponse(str(static_dir / "index.html"))
 else:
+    # No static files - show API info
+    from main import root
+    app.get("/")(root)
+
     @app.get("/{full_path:path}")
     async def no_frontend(full_path: str):
         return {"error": "Frontend static files not found. Please rebuild the application."}
