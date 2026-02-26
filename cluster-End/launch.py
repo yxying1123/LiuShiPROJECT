@@ -10,7 +10,15 @@ import sys
 import webbrowser
 import threading
 import time
+import logging
 from pathlib import Path
+
+# Fix for PyInstaller + Uvicorn logging issue on Windows
+# Ensure stdout/stderr are not None to avoid 'isatty' AttributeError
+if sys.stdout is None:
+    sys.stdout = open(os.devnull, "w", encoding="utf-8")
+if sys.stderr is None:
+    sys.stderr = open(os.devnull, "w", encoding="utf-8")
 
 # Determine if we're running from a PyInstaller bundle
 if getattr(sys, 'frozen', False):
