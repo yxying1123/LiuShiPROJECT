@@ -792,7 +792,7 @@ export const DataProvider = ({ children }) => {
         setError(emptyMessage);
         setShowCluster(false);
         setIsClusterLoading(false);
-        return false;
+        return { success: false };
       }
       setIsLoading(true);
       setIsClusterLoading(true);
@@ -819,7 +819,7 @@ export const DataProvider = ({ children }) => {
         if (!responseData?.heatmap?.values?.length) {
           setWarning('后端未返回有效的热图数据');
           setShowCluster(false);
-          return false;
+          return { success: false };
         }
         const pointGroups = Array.isArray(responseData?.pointGroups)
           ? responseData.pointGroups
@@ -834,11 +834,20 @@ export const DataProvider = ({ children }) => {
         setSelectedPoints(points);
         setShowCluster(true);
         toast.success('热图聚类完成');
-        return true;
+        return {
+          success: true,
+          data: {
+            scatterData: clusteredPoints,
+            clusterData: clusteredPoints,
+            heatmap: responseData?.heatmap ?? null,
+            rowTree: responseData?.rowTree ?? null,
+            colTree: responseData?.colTree ?? null,
+          },
+        };
       } catch (err) {
         setError(err.message || '热图聚类请求失败');
         setShowCluster(false);
-        return false;
+        return { success: false };
       } finally {
         setIsLoading(false);
         setIsClusterLoading(false);
@@ -972,6 +981,7 @@ export const DataProvider = ({ children }) => {
       startNewAnalysis,
       saveClusterResult,
       saveScatterResult,
+      setClusterResults,
     }),
     [
       datasets,

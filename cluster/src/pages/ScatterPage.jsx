@@ -22,11 +22,340 @@ import { Slider } from '../components/ui/slider';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../components/ui/collapsible';
 import { Switch } from '../components/ui/switch';
 import { requestApi } from '../utils/apiClient';
+import HeatmapDendrogram from '../components/HeatmapDendrogram';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
+import { Download, X } from 'lucide-react';
 
 const PREVIEW_IMAGE_SIZE = { width: 360, height: 240 };
 const MIN_SCATTER_WIDTH = 520;
 const MIN_SCATTER_HEIGHT = 420;
 const SCATTER_RESIZE_EDGE = 16;
+
+// 格式化表格数值
+const formatTableValue = (value) => {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return Number.isInteger(value) ? String(value) : value.toFixed(4);
+  }
+  return String(value);
+};
+
+// 构建散点表列
+const buildScatterTableColumns = (rows) => {
+  if (!rows || rows.length === 0) return [];
+  const excluded = new Set(['id', 'originalData', '__index']);
+  const keys = new Set();
+  rows.forEach((row) => {
+    Object.keys(row || {}).forEach((key) => {
+      if (!excluded.has(key)) {
+        keys.add(key);
+      }
+    });
+  });
+  const preferred = ['group', 'source', 'sourceId', 'x', 'y'];
+  const ordered = preferred.filter((key) => keys.has(key));
+  const rest = Array.from(keys).filter((key) => !preferred.includes(key));
+  return [...ordered, ...rest];
+};
+
+// 转义CSV值
+const escapeValue = (value) => {
+  if (value === null || value === undefined) return '';
+  const stringValue = String(value);
+  if (/[",\n]/.test(stringValue)) {
+    return `"${stringValue.replace(/"/g, '""')}"`;
+  }
+  return stringValue;
+};
+
+// 构建CSV
+const buildCsv = (rows) => {
+  if (!rows || rows.length === 0) return '';
+  const headers = Array.from(
+    rows.reduce((set, row) => {
+      Object.keys(row || {}).forEach((key) => set.add(key));
+      return set;
+    }, new Set())
+  );
+  const lines = [
+    headers.join(','),
+    ...rows.map((row) => headers.map((key) => escapeValue(row?.[key])).join(',')),
+  ];
+  return lines.join('\n');
+};
+
+// 构建热图CSV
+const buildHeatmapCsv = (heatmap) => {
+  if (!heatmap || !Array.isArray(heatmap.values) || heatmap.values.length === 0) return '';
+  const rows = heatmap.rows || [];
+  const cols = heatmap.cols || [];
+  const values = heatmap.values || [];
+  const headers = ['row', ...cols];
+  const lines = [headers.map(escapeValue).join(',')];
+  values.forEach((rowValues, index) => {
+    const label = rows[index] ?? `row${index + 1}`;
+    const row = [label, ...(rowValues || [])];
+    lines.push(row.map(escapeValue).join(','));
+  });
+  return lines.join('\n');
+};
+
+// 下载CSV
+const downloadCsv = (filename, rows) => {
+  const csv = buildCsv(rows);
+  if (!csv) return;
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(link.href);
+};
+
+// 下载热图CSV
+const downloadHeatmapCsv = (filename, heatmap) => {
+  const csv = buildHeatmapCsv(heatmap);
+  if (!csv) return;
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(link.href);
+};
+
+// 查看聚类结果内容组件
+const ViewClusterResultContent = ({ data }) => {
+  const heatmapRows = data.heatmap?.rows || [];
+  const heatmapCols = data.heatmap?.cols || [];
+  const heatmapValues = data.heatmap?.values || [];
+  const scatterPoints = data.scatterData || [];
+  const scatterTableColumns = useMemo(() => buildScatterTableColumns(scatterPoints), [scatterPoints]);
+  const heatmapContainerRef = useRef(null);
+  const [heatmapSize, setHeatmapSize] = useState({ width: 800, height: 500 });
+  const heatmapSvgRef = useRef(null);
+
+  useLayoutEffect(() => {
+    const node = heatmapContainerRef.current;
+    if (!node) return undefined;
+    const updateSize = () => {
+      const containerWidth = node.clientWidth || 800;
+      const width = Math.min(Math.floor(containerWidth * 0.95), 1000);
+      const height = Math.min(Math.floor(width * 0.6), 600);
+      setHeatmapSize({ width, height });
+    };
+    updateSize();
+    window.addEventListener('resize', updateSize);
+    return () => window.removeEventListener('resize', updateSize);
+  }, []);
+
+  const handleDownloadHeatmapImage = () => {
+    if (!heatmapSvgRef.current) return;
+    const svgElement = heatmapSvgRef.current;
+    const bbox = svgElement.getBoundingClientRect();
+    const width = Number(svgElement.getAttribute('width')) || svgElement.clientWidth || Math.round(bbox.width) || 1200;
+    const height = Number(svgElement.getAttribute('height')) || svgElement.clientHeight || Math.round(bbox.height) || 800;
+
+    const clonedSvg = svgElement.cloneNode(true);
+    clonedSvg.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+    clonedSvg.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink');
+    clonedSvg.setAttribute('width', width);
+    clonedSvg.setAttribute('height', height);
+    clonedSvg.setAttribute('style', 'background: #ffffff');
+
+    const serializer = new XMLSerializer();
+    const svgString = serializer.serializeToString(clonedSvg);
+    const svgBlob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
+    const svgUrl = URL.createObjectURL(svgBlob);
+    const image = new Image();
+
+    image.onload = () => {
+      const scale = Math.max(window.devicePixelRatio || 1, 2);
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, Math.floor(width * scale));
+      canvas.height = Math.max(1, Math.floor(height * scale));
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        URL.revokeObjectURL(svgUrl);
+        return;
+      }
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+      ctx.scale(scale, scale);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, width, height);
+      ctx.drawImage(image, 0, 0, width, height);
+      URL.revokeObjectURL(svgUrl);
+      canvas.toBlob((blob) => {
+        if (!blob) return;
+        const pngUrl = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        const timestamp = new Date().toISOString().replace(/[-:TZ.]/g, '').slice(0, 14);
+        link.download = `heatmap-cluster-${timestamp}.png`;
+        link.href = pngUrl;
+        link.click();
+        setTimeout(() => URL.revokeObjectURL(pngUrl), 1000);
+      }, 'image/png');
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(svgUrl);
+    };
+    image.decoding = 'async';
+    image.src = svgUrl;
+  };
+
+  const handleDownloadClusterCsv = () => {
+    if (!data.heatmap?.values?.length) return;
+    const timestamp = new Date().toISOString().replace(/[-:TZ.]/g, '').slice(0, 14);
+    downloadHeatmapCsv(`cluster-table-${timestamp}.csv`, data.heatmap);
+  };
+
+  const handleDownloadScatterCsv = () => {
+    if (!scatterPoints.length) return;
+    const timestamp = new Date().toISOString().replace(/[-:TZ.]/g, '').slice(0, 14);
+    downloadCsv(`scatter-table-${timestamp}.csv`, scatterPoints);
+  };
+
+  return (
+    <div className="space-y-4">
+      <Tabs defaultValue="heatmap" className="space-y-3">
+        <TabsList className="flex flex-wrap gap-1 bg-slate-100/60 p-1.5">
+          <TabsTrigger value="heatmap" className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-amber-500 data-[state=active]:via-orange-500 data-[state=active]:to-rose-500 data-[state=active]:text-white">
+            聚类热图树
+          </TabsTrigger>
+          <TabsTrigger value="cluster-table" className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-amber-500 data-[state=active]:via-orange-500 data-[state=active]:to-rose-500 data-[state=active]:text-white">
+            聚类表
+          </TabsTrigger>
+          <TabsTrigger value="scatter-table" className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-amber-500 data-[state=active]:via-orange-500 data-[state=active]:to-rose-500 data-[state=active]:text-white">
+            散点表
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="heatmap">
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-white/90 p-4 shadow-sm border border-slate-200">
+            <div className="text-sm text-slate-600">聚类热图树</div>
+            <button
+              type="button"
+              onClick={handleDownloadHeatmapImage}
+              className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 transition hover:bg-slate-50"
+            >
+              <Download className="h-4 w-4" />
+              下载热图图片
+            </button>
+          </div>
+          <div ref={heatmapContainerRef} className="mt-3 rounded-2xl bg-white/90 p-5 shadow-sm border border-slate-200">
+            {data.heatmap?.values?.length > 0 ? (
+              <HeatmapDendrogram
+                heatmap={data.heatmap}
+                rowTree={data.rowTree}
+                colTree={data.colTree}
+                width={heatmapSize.width}
+                height={heatmapSize.height}
+                svgRef={heatmapSvgRef}
+                showTitle={false}
+              />
+            ) : (
+              <div className="text-sm text-slate-500">暂无热图数据</div>
+            )}
+          </div>
+        </TabsContent>
+
+        <TabsContent value="cluster-table">
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white/90 p-4">
+            <div className="text-sm text-slate-600">聚类表</div>
+            <button
+              type="button"
+              onClick={handleDownloadClusterCsv}
+              disabled={!heatmapValues.length}
+              className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
+            >
+              <Download className="h-4 w-4" />
+              下载聚类表
+            </button>
+          </div>
+          <div className="mt-3 rounded-2xl border border-slate-200 bg-white/90 p-4">
+            {heatmapRows.length === 0 ? (
+              <div className="text-sm text-slate-600">暂无聚类表数据</div>
+            ) : (
+              <div className="max-h-[50vh] overflow-x-auto overflow-y-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>聚类</TableHead>
+                      {heatmapCols.map((col) => (
+                        <TableHead key={col}>{col}</TableHead>
+                      ))}
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {heatmapRows.map((rowLabel, rowIndex) => (
+                      <TableRow key={rowLabel}>
+                        <TableCell className="font-medium text-slate-700">{rowLabel}</TableCell>
+                        {(heatmapValues[rowIndex] || []).map((value, valueIndex) => (
+                          <TableCell key={`${rowLabel}-${heatmapCols[valueIndex]}`}>
+                            {formatTableValue(value)}
+                          </TableCell>
+                        ))}
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </div>
+        </TabsContent>
+
+        <TabsContent value="scatter-table">
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white/90 p-4">
+            <div className="text-sm text-slate-600">散点表</div>
+            <button
+              type="button"
+              onClick={handleDownloadScatterCsv}
+              disabled={!scatterPoints.length}
+              className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
+            >
+              <Download className="h-4 w-4" />
+              下载散点表
+            </button>
+          </div>
+          <div className="mt-3 rounded-2xl border border-slate-200 bg-white/90 p-4">
+            {scatterPoints.length === 0 ? (
+              <div className="text-sm text-slate-600">暂无散点表数据</div>
+            ) : (
+              <div className="max-h-[50vh] overflow-x-auto overflow-y-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      {scatterTableColumns.map((column) => (
+                        <TableHead key={column}>{column}</TableHead>
+                      ))}
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {scatterPoints.map((row, rowIndex) => (
+                      <TableRow key={row.id ?? rowIndex}>
+                        {scatterTableColumns.map((column) => (
+                          <TableCell key={`${row.id ?? rowIndex}-${column}`}>
+                            {formatTableValue(row?.[column])}
+                          </TableCell>
+                        ))}
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </div>
+        </TabsContent>
+      </Tabs>
+    </div>
+  );
+};
 
 const ScatterPage = () => {
   const navigate = useNavigate();
@@ -75,6 +404,7 @@ const ScatterPage = () => {
     analysisFlow,
     setAnalysisFlow,
     setAnalysisFlowFuture,
+    heatmapPayload,
   } = useDataContext();
   const [isSaveOpen, setIsSaveOpen] = useState(false);
   const [isInitialConfigOpen, setIsInitialConfigOpen] = useState(false);
@@ -142,6 +472,9 @@ const ScatterPage = () => {
   const [isResizeHover, setIsResizeHover] = useState(false);
   const [analysisSource, setAnalysisSource] = useState('files');
   const [analysisSourceResultId, setAnalysisSourceResultId] = useState('');
+  // 查看聚类结果弹窗状态
+  const [isViewClusterOpen, setIsViewClusterOpen] = useState(false);
+  const [viewClusterData, setViewClusterData] = useState(null);
   const layoutReady = analysisAreaReady && scatterPanelReady;
   const selectedSources = scatterSelectedSources;
   const setSelectedSources = setScatterSelectedSources;
@@ -1183,7 +1516,7 @@ const ScatterPage = () => {
     });
   };
 
-  const addFlowStep = (type, detail, reset = false) => {
+  const addFlowStep = (type, detail, reset = false, resultData = null) => {
     const timestamp = new Date();
     setAnalysisFlow((prev) => {
       const entry = {
@@ -1191,6 +1524,7 @@ const ScatterPage = () => {
         type,
         detail,
         time: timestamp.toISOString(),
+        resultData,
       };
       return reset ? [entry] : [...prev, entry];
     });
@@ -1383,6 +1717,20 @@ const ScatterPage = () => {
     setIsClusterConfigOpen(true);
   };
 
+  // 处理查看聚类结果
+  const handleViewClusterResult = (item) => {
+    if (item?.resultData) {
+      setViewClusterData(item.resultData);
+      setIsViewClusterOpen(true);
+    }
+  };
+
+  // 关闭查看弹窗
+  const handleCloseViewCluster = () => {
+    setIsViewClusterOpen(false);
+    setViewClusterData(null);
+  };
+
   const handleClusterConfirm = async () => {
     setIsClusterConfigOpen(false);
     setIsClustering(true); // 开始加载
@@ -1398,14 +1746,25 @@ const ScatterPage = () => {
       dropColumns: clusterDropColumns,
     };
     const clusterPoints = selectedPoints.length > 0 ? selectedPoints : activeScatterData;
-    const success = await handleClusterFromPoints(clusterPoints, options);
+    const result = await handleClusterFromPoints(clusterPoints, options);
     setIsClustering(false); // 结束加载
-    if (success) {
+    if (result?.success && result?.data) {
       setIsClusterConfigOpen(false);
       setColorMode('cluster');
+      // 保存聚类结果数据到分析流程记录中（使用返回的数据，而不是状态变量）
+      const resultData = {
+        scatterData: result.data.scatterData,
+        clusterData: result.data.clusterData,
+        heatmap: result.data.heatmap,
+        rowTree: result.data.rowTree,
+        colTree: result.data.colTree,
+        options,
+      };
       addFlowStep(
         '聚类分析',
-        `点数 ${clusterPoints.length} · k=${options.k} · resolution=${options.resolution}`
+        `点数 ${clusterPoints.length} · k=${options.k} · resolution=${options.resolution}`,
+        false,
+        resultData
       );
       navigate('/cluster');
     }
@@ -1509,7 +1868,18 @@ const ScatterPage = () => {
                       <div key={item.id} className="flex items-center gap-3">
                         {index > 0 && <div className="h-px w-6 bg-slate-200" />}
                         <div className="min-w-[220px] rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-sm">
-                          <div className="text-xs font-semibold text-slate-700">{item.type}</div>
+                          <div className="flex items-center justify-between">
+                            <div className="text-xs font-semibold text-slate-700">{item.type}</div>
+                            {item.type === '聚类分析' && item.resultData && (
+                              <button
+                                type="button"
+                                onClick={() => handleViewClusterResult(item)}
+                                className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-600 transition hover:bg-amber-100"
+                              >
+                                查看
+                              </button>
+                            )}
+                          </div>
                           <div className="mt-1 text-sm text-slate-600">{item.detail}</div>
                           <div className="mt-1 text-xs text-slate-400">
                             {new Date(item.time).toLocaleTimeString()}
@@ -2840,6 +3210,28 @@ const ScatterPage = () => {
               }`}
             >
               保存
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 查看聚类结果弹窗 */}
+      <Dialog open={isViewClusterOpen} onOpenChange={setIsViewClusterOpen}>
+        <DialogContent className="sm:max-w-6xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>聚类分析结果</DialogTitle>
+            <DialogDescription>查看历史聚类分析的详细结果</DialogDescription>
+          </DialogHeader>
+          {viewClusterData && (
+            <ViewClusterResultContent data={viewClusterData} />
+          )}
+          <DialogFooter>
+            <button
+              type="button"
+              onClick={handleCloseViewCluster}
+              className="inline-flex items-center justify-center rounded-full border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+            >
+              关闭
             </button>
           </DialogFooter>
         </DialogContent>
