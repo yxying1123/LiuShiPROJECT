@@ -1,5 +1,14 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, ArrowRight, ChevronDown, ChevronUp, Save } from 'lucide-react';
+import {
+  ArrowLeft,
+  ArrowRight,
+  Check,
+  ChevronDown,
+  ChevronUp,
+  Download,
+  Save,
+  X,
+} from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import Plotly from 'plotly.js-dist-min';
 import ScatterPlot, { SCATTER_COLOR_SCALE, getScatterColor } from '../components/ScatterPlot';
@@ -25,7 +34,8 @@ import { requestApi } from '../utils/apiClient';
 import HeatmapDendrogram from '../components/HeatmapDendrogram';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
-import { Download, X } from 'lucide-react';
+import CustomLegendGroups from '../components/CustomLegendGroups';
+import SimpleHeatmapView from '../components/SimpleHeatmapView';
 
 const PREVIEW_IMAGE_SIZE = { width: 360, height: 240 };
 const MIN_SCATTER_WIDTH = 520;
@@ -85,6 +95,28 @@ const buildCsv = (rows) => {
   return lines.join('\n');
 };
 
+// 构建精简版CSV（去除x, y, cluster, group列）
+const buildSimplifiedCsv = (rows) => {
+  if (!rows || rows.length === 0) return '';
+  const excludedColumns = new Set(['x', 'y', 'cluster', 'group', 'id', 'sourceId', '__index']);
+  const headers = Array.from(
+    rows.reduce((set, row) => {
+      Object.keys(row || {}).forEach((key) => {
+        if (!excludedColumns.has(key)) {
+          set.add(key);
+        }
+      });
+      return set;
+    }, new Set())
+  );
+  if (headers.length === 0) return '';
+  const lines = [
+    headers.join(','),
+    ...rows.map((row) => headers.map((key) => escapeValue(row?.[key])).join(',')),
+  ];
+  return lines.join('\n');
+};
+
 // 构建热图CSV
 const buildHeatmapCsv = (heatmap) => {
   if (!heatmap || !Array.isArray(heatmap.values) || heatmap.values.length === 0) return '';
@@ -104,6 +136,20 @@ const buildHeatmapCsv = (heatmap) => {
 // 下载CSV
 const downloadCsv = (filename, rows) => {
   const csv = buildCsv(rows);
+  if (!csv) return;
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(link.href);
+};
+
+// 下载精简版CSV
+const downloadSimplifiedCsv = (filename, rows) => {
+  const csv = buildSimplifiedCsv(rows);
   if (!csv) return;
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
   const link = document.createElement('a');
@@ -215,11 +261,17 @@ const ViewClusterResultContent = ({ data }) => {
     downloadHeatmapCsv(`cluster-table-${timestamp}.csv`, data.heatmap);
   };
 
-  const handleDownloadScatterCsv = () => {
-    if (!scatterPoints.length) return;
-    const timestamp = new Date().toISOString().replace(/[-:TZ.]/g, '').slice(0, 14);
-    downloadCsv(`scatter-table-${timestamp}.csv`, scatterPoints);
-  };
+const handleDownloadScatterCsv = () => {
+  if (!scatterPoints.length) return;
+  const timestamp = new Date().toISOString().replace(/[-:TZ.]/g, '').slice(0, 14);
+  downloadCsv(`scatter-table-${timestamp}.csv`, scatterPoints);
+};
+
+const handleDownloadSimplifiedScatterCsv = () => {
+  if (!scatterPoints.length) return;
+  const timestamp = new Date().toISOString().replace(/[-:TZ.]/g, '').slice(0, 14);
+  downloadSimplifiedCsv(`scatter-table-simplified-${timestamp}.csv`, scatterPoints);
+};
 
   return (
     <div className="space-y-4">
@@ -313,15 +365,28 @@ const ViewClusterResultContent = ({ data }) => {
         <TabsContent value="scatter-table">
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white/90 p-4">
             <div className="text-sm text-slate-600">散点表</div>
-            <button
-              type="button"
-              onClick={handleDownloadScatterCsv}
-              disabled={!scatterPoints.length}
-              className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
-            >
-              <Download className="h-4 w-4" />
-              下载散点表
-            </button>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={handleDownloadScatterCsv}
+                disabled={!scatterPoints.length}
+                className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
+                title="下载包含所有列的完整CSV文件"
+              >
+                <Download className="h-4 w-4" />
+                下载完整CSV
+              </button>
+              <button
+                type="button"
+                onClick={handleDownloadSimplifiedScatterCsv}
+                disabled={!scatterPoints.length}
+                className="inline-flex items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-sm text-amber-700 transition hover:bg-amber-100 disabled:opacity-50"
+                title="下载去除x,y,cluster,group等坐标列的精简版CSV文件"
+              >
+                <Download className="h-4 w-4" />
+                下载精简CSV
+              </button>
+            </div>
           </div>
           <div className="mt-3 rounded-2xl border border-slate-200 bg-white/90 p-4">
             {scatterPoints.length === 0 ? (
@@ -412,16 +477,49 @@ const ScatterPage = () => {
   const [isClustering, setIsClustering] = useState(false); // 聚类分析加载状态
   const [isScatterUpdating, setIsScatterUpdating] = useState(false);
   const [saveName, setSaveName] = useState('');
-  const [clusterKInput, setClusterKInput] = useState('20');
-  const [clusterResolutionInput, setClusterResolutionInput] = useState('1.0');
-  const [clusterIterationsInput, setClusterIterationsInput] = useState('20');
-  const [clusterSeedInput, setClusterSeedInput] = useState('123');
-  const [clusterDropColumns, setClusterDropColumns] = useState([]);
+
+  // 从 localStorage 读取保存的聚类参数，如果没有则使用默认值
+  const getSavedClusterParams = () => {
+    try {
+      const saved = localStorage.getItem('clusterParams');
+      if (saved) {
+        const params = JSON.parse(saved);
+        return {
+          k: params.k ?? '20',
+          resolution: params.resolution ?? '1.0',
+          iterations: params.iterations ?? '20',
+          seed: params.seed ?? '123',
+          dropColumns: params.dropColumns ?? ['FSC-A', 'SSC-A', 'FSC-H', 'FSC-W', 'Time'],
+        };
+      }
+    } catch {
+      // 忽略解析错误
+    }
+    return {
+      k: '20',
+      resolution: '1.0',
+      iterations: '20',
+      seed: '123',
+      dropColumns: ['FSC-A', 'SSC-A', 'FSC-H', 'FSC-W', 'Time'],
+    };
+  };
+
+  const savedParams = getSavedClusterParams();
+  const [clusterKInput, setClusterKInput] = useState(savedParams.k);
+  const [clusterResolutionInput, setClusterResolutionInput] = useState(savedParams.resolution);
+  const [clusterIterationsInput, setClusterIterationsInput] = useState(savedParams.iterations);
+  const [clusterSeedInput, setClusterSeedInput] = useState(savedParams.seed);
+  const [clusterDropColumns, setClusterDropColumns] = useState(savedParams.dropColumns);
   const [isReductionOpen, setIsReductionOpen] = useState(false);
   const [reductionColumns, setReductionColumns] = useState([]);
   const [lastReductionColumns, setLastReductionColumns] = useState([]);
   const [isSourceLegendOpen, setIsSourceLegendOpen] = useState(true);
   const [isClusterLegendOpen, setIsClusterLegendOpen] = useState(true);
+  // 自定义分组状态
+  const [sourceLegendMode, setSourceLegendMode] = useState('custom');
+  const [clusterLegendMode, setClusterLegendMode] = useState('custom');
+  const [customSourceGroups, setCustomSourceGroups] = useState([]);
+  const [customClusterGroups, setCustomClusterGroups] = useState([]);
   const [isFlowOpen, setIsFlowOpen] = useState(true);
   const [colorMode, setColorMode] = useState('source');
   const [selectedClusters, setSelectedClusters] = useState([]);
@@ -475,6 +573,12 @@ const ScatterPage = () => {
   // 查看聚类结果弹窗状态
   const [isViewClusterOpen, setIsViewClusterOpen] = useState(false);
   const [viewClusterData, setViewClusterData] = useState(null);
+  // 查看当前热图弹窗状态
+  const [isViewHeatmapOpen, setIsViewHeatmapOpen] = useState(false);
+  // 自定义分组热图数据（当使用自定义分组时重新计算）
+  const [customHeatmapData, setCustomHeatmapData] = useState(null);
+  // 热图标准化方式：'column' | 'row' | 'none'（与后端一致，默认为 column）
+  const [heatmapScale, setHeatmapScale] = useState('column');
   const layoutReady = analysisAreaReady && scatterPanelReady;
   const selectedSources = scatterSelectedSources;
   const setSelectedSources = setScatterSelectedSources;
@@ -836,6 +940,11 @@ const ScatterPage = () => {
     setColorField('');
     setAnalysisSource('files');
     setAnalysisSourceResultId('');
+    // 重置自定义分组状态
+    setSourceLegendMode('default');
+    setClusterLegendMode('default');
+    setCustomSourceGroups([]);
+    setCustomClusterGroups([]);
     handleScatterAxisChange('', '');
   }, [
     analysisResetToken,
@@ -1284,10 +1393,59 @@ const ScatterPage = () => {
       return colorFieldOptions.map((label) => ({ label }));
     }
     if (colorMode === 'cluster') {
+      // 自定义分组模式下，同时返回自定义组和未分组的聚类
+      if (clusterLegendMode === 'custom' && customClusterGroups.length > 0) {
+        // 获取已被分组的聚类标签
+        const groupedLabels = new Set();
+        customClusterGroups.forEach((group) => {
+          group.sources.forEach((label) => groupedLabels.add(label));
+        });
+        // 自定义组列表
+        const customGroups = customClusterGroups.map((group) => ({
+          label: group.name,
+          color: group.color,
+          sources: group.sources,
+          isCustomGroup: true,
+        }));
+        // 未分组的聚类列表
+        const ungroupedItems = clusterLegendItems
+          .filter((item) => !groupedLabels.has(item.label))
+          .map((item) => ({
+            label: item.label,
+            color: item.color,
+            isUngrouped: true,
+          }));
+        return [...customGroups, ...ungroupedItems];
+      }
       return clusterLegendItems;
     }
+    // source 模式
+    // 自定义分组模式下，同时返回自定义组和未分组的来源
+    if (sourceLegendMode === 'custom' && customSourceGroups.length > 0) {
+      // 获取已被分组的来源标签
+      const groupedLabels = new Set();
+      customSourceGroups.forEach((group) => {
+        group.sources.forEach((label) => groupedLabels.add(label));
+      });
+      // 自定义组列表
+      const customGroups = customSourceGroups.map((group) => ({
+        label: group.name,
+        color: group.color,
+        sources: group.sources,
+        isCustomGroup: true,
+      }));
+      // 未分组的来源列表
+      const ungroupedItems = sourceLegendItems
+        .filter((item) => !groupedLabels.has(item.label))
+        .map((item) => ({
+          label: item.label,
+          color: item.color,
+          isUngrouped: true,
+        }));
+      return [...customGroups, ...ungroupedItems];
+    }
     return sourceLegendItems;
-  }, [colorMode, colorFieldOptions, clusterLegendItems, sourceLegendItems]);
+  }, [colorMode, colorFieldOptions, clusterLegendItems, sourceLegendItems, clusterLegendMode, customClusterGroups, sourceLegendMode, customSourceGroups]);
 
   const sanitizeFileName = (value) =>
     String(value || 'preview').replace(/[^a-z0-9-_]+/gi, '_').replace(/^_+|_+$/g, '');
@@ -1338,9 +1496,18 @@ const ScatterPage = () => {
         let label = item.label;
         let count = filteredScatterData.length;
         if (colorMode === 'cluster') {
-          points = filteredScatterData.filter(
-            (point) => normalizeGroupValue(point?.group ?? point?.cluster) === item.label
-          );
+          if (item.isCustomGroup && item.sources) {
+            // 自定义分组模式：过滤属于该组任一聚类的数据点
+            const groupSet = new Set(item.sources);
+            points = filteredScatterData.filter(
+              (point) => groupSet.has(normalizeGroupValue(point?.group ?? point?.cluster))
+            );
+          } else {
+            // 默认模式：过滤单个聚类的数据点
+            points = filteredScatterData.filter(
+              (point) => normalizeGroupValue(point?.group ?? point?.cluster) === item.label
+            );
+          }
           count = points.length;
           marker = {
             size: scatterPointSize,
@@ -1348,9 +1515,18 @@ const ScatterPage = () => {
             opacity: 0.85,
           };
         } else if (colorMode === 'source') {
-          points = filteredScatterData.filter(
-            (point) => normalizeSourceValue(point?.source ?? point?.sourceId) === item.label
-          );
+          if (item.isCustomGroup && item.sources) {
+            // 自定义分组模式：过滤属于该组任一来源的数据点
+            const groupSet = new Set(item.sources);
+            points = filteredScatterData.filter(
+              (point) => groupSet.has(normalizeSourceValue(point?.source ?? point?.sourceId))
+            );
+          } else {
+            // 默认模式：过滤单个来源的数据点
+            points = filteredScatterData.filter(
+              (point) => normalizeSourceValue(point?.source ?? point?.sourceId) === item.label
+            );
+          }
           count = points.length;
           marker = {
             size: scatterPointSize,
@@ -1600,10 +1776,11 @@ const ScatterPage = () => {
     if (mode === 'reduction' && columns.length === 0) return false;
     if (mode === '2d' && (!axisX || !axisY)) return false;
     if (!sources || sources.length === 0) return false;
+    // 处理行数限制：空字符串或0表示读取所有行
     const parsed = Number.parseInt(rowLimitValue, 10);
-    const nextLimit = Number.isNaN(parsed) ? rowLimit : Math.max(1, parsed);
-    setRowLimit(nextLimit);
-    setRowLimitInput(String(nextLimit));
+    const nextLimit = Number.isNaN(parsed) || parsed <= 0 ? 0 : parsed;
+    setRowLimit(nextLimit > 0 ? nextLimit : 1000);
+    setRowLimitInput(rowLimitValue);
     setIsScatterUpdating(true);
     let success = false;
     let flowDetail = '';
@@ -1731,6 +1908,195 @@ const ScatterPage = () => {
     setViewClusterData(null);
   };
 
+  // 矩阵标准化函数（与后端 _scale_matrix 对应）
+  const scaleMatrix = useCallback((values, scale = 'column') => {
+    if (!values || values.length === 0 || values[0].length === 0) {
+      return values;
+    }
+
+    const scaleType = (scale || 'none').toLowerCase();
+    const rowCount = values.length;
+    const colCount = values[0].length;
+
+    // 不做标准化
+    if (scaleType === 'none' || scaleType === 'no' || scaleType === 'false') {
+      return values;
+    }
+
+    // 按列标准化 (column): 每列减去均值，除以标准差
+    if (scaleType === 'column') {
+      const colMeans = [];
+      const colStds = [];
+
+      // 计算每列的均值和标准差
+      for (let col = 0; col < colCount; col++) {
+        const colValues = values.map(row => row[col]).filter(v => typeof v === 'number' && !isNaN(v));
+        if (colValues.length === 0) {
+          colMeans.push(0);
+          colStds.push(1);
+          continue;
+        }
+        const mean = colValues.reduce((a, b) => a + b, 0) / colValues.length;
+        const variance = colValues.reduce((sum, v) => sum + Math.pow(v - mean, 2), 0) / colValues.length;
+        const std = Math.sqrt(variance) || 1; // 避免除以0
+        colMeans.push(mean);
+        colStds.push(std);
+      }
+
+      // 标准化
+      return values.map(row =>
+        row.map((val, colIndex) => {
+          if (typeof val !== 'number' || isNaN(val)) return 0;
+          return (val - colMeans[colIndex]) / colStds[colIndex];
+        })
+      );
+    }
+
+    // 按行标准化 (row): 每行减去均值，除以标准差
+    if (scaleType === 'row') {
+      return values.map(row => {
+        const rowValues = row.filter(v => typeof v === 'number' && !isNaN(v));
+        if (rowValues.length === 0) return row.map(() => 0);
+
+        const mean = rowValues.reduce((a, b) => a + b, 0) / rowValues.length;
+        const variance = rowValues.reduce((sum, v) => sum + Math.pow(v - mean, 2), 0) / rowValues.length;
+        const std = Math.sqrt(variance) || 1;
+
+        return row.map(val => {
+          if (typeof val !== 'number' || isNaN(val)) return 0;
+          return (val - mean) / std;
+        });
+      });
+    }
+
+    return values;
+  }, []);
+
+  // 根据自定义分组计算热图数据（必须在 handleViewHeatmap 之前定义）
+  const computeCustomGroupHeatmap = useCallback((points, customGroups, originalCols, scale = 'column') => {
+    if (!points || points.length === 0 || !customGroups || customGroups.length === 0) {
+      return null;
+    }
+
+    // 防御性检查：确保 originalCols 是数组
+    const cols = Array.isArray(originalCols) ? originalCols : [];
+    if (cols.length === 0) {
+      return null;
+    }
+
+    // 获取数值列（排除非数值列）
+    const excludedCols = new Set(['id', 'x', 'y', 'cluster', 'group', 'source', 'sourceId', '__index']);
+    const numericCols = cols.filter(col => !excludedCols.has(col));
+
+    // 按自定义分组计算平均值
+    const groupResults = [];
+
+    customGroups.forEach((group) => {
+      // 防御性检查：确保 group 和 group.sources 存在
+      if (!group || !Array.isArray(group.sources)) return;
+
+      // 获取该组包含的所有点的 cluster/source 标签
+      const groupLabels = new Set(group.sources);
+
+      // 筛选属于该组的点
+      const groupPoints = points.filter(p => {
+        const pointLabel = String(p.cluster ?? p.group ?? p.source ?? p.sourceId ?? '');
+        return groupLabels.has(pointLabel);
+      });
+
+      if (groupPoints.length === 0) return;
+
+      // 计算每个数值列的平均值
+      const rowValues = numericCols.map((col) => {
+        const values = groupPoints
+          .map(p => Number(p[col]))
+          .filter(v => !isNaN(v));
+        if (values.length === 0) return 0;
+        return values.reduce((a, b) => a + b, 0) / values.length;
+      });
+
+      groupResults.push({
+        name: group.name || '未命名组',
+        values: rowValues,
+        count: groupPoints.length,
+      });
+    });
+
+    // 处理未分组的点
+    const groupedLabels = new Set();
+    customGroups.forEach((g) => {
+      if (g && Array.isArray(g.sources)) {
+        g.sources.forEach((s) => groupedLabels.add(s));
+      }
+    });
+    const ungroupedPoints = points.filter(p => {
+      const pointLabel = String(p.cluster ?? p.group ?? p.source ?? p.sourceId ?? '');
+      return !groupedLabels.has(pointLabel);
+    });
+
+    if (ungroupedPoints.length > 0) {
+      const rowValues = numericCols.map((col) => {
+        const values = ungroupedPoints
+          .map(p => Number(p[col]))
+          .filter(v => !isNaN(v));
+        if (values.length === 0) return 0;
+        return values.reduce((a, b) => a + b, 0) / values.length;
+      });
+
+      groupResults.push({
+        name: '未分组',
+        values: rowValues,
+        count: ungroupedPoints.length,
+      });
+    }
+
+    // 获取原始均值矩阵
+    const rawValues = groupResults.map(g => g.values);
+
+    // 进行标准化处理
+    const scaledValues = scaleMatrix(rawValues, scale);
+
+    return {
+      rows: groupResults.map(g => g.name),
+      cols: numericCols,
+      values: scaledValues,
+      groupInfo: groupResults,
+      scale,
+    };
+  }, [scaleMatrix]);
+
+  // 处理查看当前热图
+  const handleViewHeatmap = () => {
+    if (!heatmapPayload?.heatmap?.values?.length) {
+      toast.error('暂无热图数据，请先进行聚类分析');
+      return;
+    }
+
+    // 检查是否使用自定义分组（只要聚类筛选是自定义模式即可，不依赖颜色选择）
+    const isCustomMode = clusterLegendMode === 'custom' && customClusterGroups.length > 0;
+
+    if (isCustomMode) {
+      // 根据自定义分组重新计算热图数据（使用选定的标准化方式）
+      const customHeatmap = computeCustomGroupHeatmap(
+        clusterData.length > 0 ? clusterData : scatterData,
+        customClusterGroups,
+        heatmapPayload.heatmap.cols,
+        heatmapScale // 传递标准化方式
+      );
+      setCustomHeatmapData(customHeatmap);
+    } else {
+      setCustomHeatmapData(null);
+    }
+
+    setIsViewHeatmapOpen(true);
+  };
+
+  // 关闭热图弹窗
+  const handleCloseViewHeatmap = () => {
+    setIsViewHeatmapOpen(false);
+    setCustomHeatmapData(null);
+  };
+
   const handleClusterConfirm = async () => {
     setIsClusterConfigOpen(false);
     setIsClustering(true); // 开始加载
@@ -1745,6 +2111,18 @@ const ScatterPage = () => {
       seed: Number.isFinite(parsedSeed) ? parsedSeed : 123,
       dropColumns: clusterDropColumns,
     };
+    // 保存聚类参数到 localStorage
+    try {
+      localStorage.setItem('clusterParams', JSON.stringify({
+        k: clusterKInput,
+        resolution: clusterResolutionInput,
+        iterations: clusterIterationsInput,
+        seed: clusterSeedInput,
+        dropColumns: clusterDropColumns,
+      }));
+    } catch {
+      // 忽略存储错误
+    }
     const clusterPoints = selectedPoints.length > 0 ? selectedPoints : activeScatterData;
     const result = await handleClusterFromPoints(clusterPoints, options);
     setIsClustering(false); // 结束加载
@@ -2014,6 +2392,23 @@ const ScatterPage = () => {
                     聚类分析
                   </button>
                   <button
+                    onClick={handleViewHeatmap}
+                    disabled={!heatmapPayload?.heatmap?.values?.length}
+                    className={`inline-flex w-full items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition ${
+                      !heatmapPayload?.heatmap?.values?.length
+                        ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                        : 'border border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100'
+                    }`}
+                  >
+                    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <rect x="3" y="3" width="7" height="7" rx="1" />
+                      <rect x="14" y="3" width="7" height="7" rx="1" />
+                      <rect x="3" y="14" width="7" height="7" rx="1" />
+                      <rect x="14" y="14" width="7" height="7" rx="1" />
+                    </svg>
+                    查看热图
+                  </button>
+                  <button
                     onClick={() => setIsSaveOpen(true)}
                     disabled={!hasScatterData}
                     className={`inline-flex w-full items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition ${
@@ -2213,6 +2608,15 @@ const ScatterPage = () => {
                       colorRange={colorRange}
                       pointSize={scatterPointSize}
                       onPlotReady={handlePlotReady}
+                      // 自定义分组支持
+                      customGroups={
+                        colorMode === 'source' && sourceLegendMode === 'custom'
+                          ? customSourceGroups
+                          : colorMode === 'cluster' && clusterLegendMode === 'custom'
+                            ? customClusterGroups
+                            : null
+                      }
+                      customGroupType={colorMode}
                     />
                     {isCustomSize && (
                       <div className="pointer-events-none absolute inset-0 z-10 rounded-xl border border-slate-200/70" />
@@ -2450,9 +2854,10 @@ const ScatterPage = () => {
                 </div>
               )}
 
-              <div className="mt-3 flex-1 min-h-0 space-y-3 overflow-y-auto pr-1">
+              <div className="mt-3 flex-1 min-h-0 space-y-4 overflow-y-auto pr-1">
+                {/* 来源筛选 - 合并编辑和筛选 */}
                 <Collapsible open={isSourceLegendOpen} onOpenChange={setIsSourceLegendOpen}>
-                  <div className="flex items-center justify-between text-xs font-semibold text-slate-700">
+                  <div className="flex items-center justify-between text-xs font-semibold text-slate-700 mb-2">
                     <span>来源筛选</span>
                     <CollapsibleTrigger asChild>
                       <button
@@ -2468,73 +2873,58 @@ const ScatterPage = () => {
                     </CollapsibleTrigger>
                   </div>
                   <CollapsibleContent>
-                    <div className="mt-2 space-y-2">
-                      {sourceLegendItems.map((item) => {
-                        const isEnabled = selectedSources.includes(item.label);
-                        return (
+                    {/* 分组方式选择器 - 始终显示 */}
+                    <div className="flex items-center justify-between mb-3">
+                      <span className="text-xs font-medium text-slate-600">分组方式</span>
+                      <Popover>
+                        <PopoverTrigger asChild>
                           <button
-                            key={item.label}
                             type="button"
-                            onClick={() => handleToggleSource(item.label, !isEnabled)}
-                            className={`flex w-full items-center justify-between gap-3 rounded-lg border px-3 py-2 text-sm transition ${
-                              isEnabled
-                                ? 'border-slate-100 bg-slate-50/70 text-slate-700 hover:border-slate-200'
-                                : 'border-slate-200 bg-slate-100/80 text-slate-400'
-                            }`}
-                            aria-pressed={isEnabled}
+                            className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-700 transition hover:border-slate-300"
                           >
-                            <div className="flex min-w-0 items-center gap-2">
-                              <span
-                                className="h-3 w-3 rounded-sm"
-                                style={{ backgroundColor: item.color, opacity: isEnabled ? 1 : 0.4 }}
-                              />
-                              <span
-                                className={`truncate ${isEnabled ? 'text-slate-700' : 'line-through'}`}
-                              >
-                                {item.label}
-                              </span>
-                            </div>
-                            <span
-                              className={`text-xs ${isEnabled ? 'text-slate-500' : 'text-slate-400'}`}
-                            >
-                              {item.count}
-                            </span>
+                            <span>{sourceLegendMode === 'custom' ? '自定义' : '默认'}</span>
+                            <ChevronDown className="h-3.5 w-3.5 text-slate-500" />
                           </button>
-                        );
-                      })}
-                      {sourceLegendItems.length === 0 && (
-                        <div className="text-xs text-slate-500">暂无来源图例</div>
-                      )}
+                        </PopoverTrigger>
+                        <PopoverContent className="w-40 p-1" align="end">
+                          <button
+                            type="button"
+                            onClick={() => setSourceLegendMode('default')}
+                            className={`flex w-full items-center justify-between rounded-md px-3 py-2 text-sm transition ${
+                              sourceLegendMode === 'default'
+                                ? 'bg-slate-100 text-slate-700'
+                                : 'text-slate-600 hover:bg-slate-50'
+                            }`}
+                          >
+                            <span>默认</span>
+                            {sourceLegendMode === 'default' && <Check className="h-3.5 w-3.5" />}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setSourceLegendMode('custom')}
+                            className={`flex w-full items-center justify-between rounded-md px-3 py-2 text-sm transition ${
+                              sourceLegendMode === 'custom'
+                                ? 'bg-slate-100 text-slate-700'
+                                : 'text-slate-600 hover:bg-slate-50'
+                            }`}
+                          >
+                            <span>自定义</span>
+                            {sourceLegendMode === 'custom' && <Check className="h-3.5 w-3.5" />}
+                          </button>
+                        </PopoverContent>
+                      </Popover>
                     </div>
-                  </CollapsibleContent>
-                </Collapsible>
 
-                {hasClusterData && (
-                  <Collapsible open={isClusterLegendOpen} onOpenChange={setIsClusterLegendOpen}>
-                    <div className="flex items-center justify-between text-xs font-semibold text-slate-700">
-                      <span>聚类筛选</span>
-                      <CollapsibleTrigger asChild>
-                        <button
-                          type="button"
-                          className="inline-flex items-center justify-center rounded-full border border-slate-200 px-2 py-1 text-[11px] text-slate-500 transition hover:bg-slate-50"
-                        >
-                          {isClusterLegendOpen ? (
-                            <ChevronUp className="h-3.5 w-3.5" />
-                          ) : (
-                            <ChevronDown className="h-3.5 w-3.5" />
-                          )}
-                        </button>
-                      </CollapsibleTrigger>
-                    </div>
-                    <CollapsibleContent>
-                      <div className="mt-2 space-y-2">
-                        {clusterLegendItems.map((item) => {
-                          const isEnabled = selectedClusters.includes(item.label);
+                    {sourceLegendMode === 'default' ? (
+                      // 默认模式：直接显示筛选列表
+                      <div className="space-y-2">
+                        {sourceLegendItems.map((item) => {
+                          const isEnabled = selectedSources.includes(item.label);
                           return (
                             <button
                               key={item.label}
                               type="button"
-                              onClick={() => handleToggleCluster(item.label, !isEnabled)}
+                              onClick={() => handleToggleSource(item.label, !isEnabled)}
                               className={`flex w-full items-center justify-between gap-3 rounded-lg border px-3 py-2 text-sm transition ${
                                 isEnabled
                                   ? 'border-slate-100 bg-slate-50/70 text-slate-700 hover:border-slate-200'
@@ -2550,7 +2940,7 @@ const ScatterPage = () => {
                                 <span
                                   className={`truncate ${isEnabled ? 'text-slate-700' : 'line-through'}`}
                                 >
-                                  聚类 {item.label}
+                                  {item.label}
                                 </span>
                               </div>
                               <span
@@ -2561,10 +2951,146 @@ const ScatterPage = () => {
                             </button>
                           );
                         })}
-                        {clusterLegendItems.length === 0 && (
-                          <div className="text-xs text-slate-500">暂无聚类图例</div>
+                        {sourceLegendItems.length === 0 && (
+                          <div className="text-xs text-slate-500">暂无来源图例</div>
                         )}
                       </div>
+                    ) : (
+                      // 自定义模式：使用合并的组件（不包含分组方式选择器）
+                      <CustomLegendGroups
+                        mode={sourceLegendMode}
+                        onModeChange={setSourceLegendMode}
+                        sourceItems={sourceLegendItems}
+                        customGroups={customSourceGroups}
+                        onCustomGroupsChange={setCustomSourceGroups}
+                        selectedItems={selectedSources}
+                        onSelectionChange={(item, isSelected) => {
+                          handleToggleSource(item, isSelected);
+                        }}
+                        type="source"
+                        hideModeSelector={true}
+                      />
+                    )}
+                  </CollapsibleContent>
+                </Collapsible>
+
+                {/* 聚类筛选 - 合并编辑和筛选 */}
+                {hasClusterData && (
+                  <Collapsible open={isClusterLegendOpen} onOpenChange={setIsClusterLegendOpen}>
+                    <div className="flex items-center justify-between text-xs font-semibold text-slate-700 mb-2">
+                      <span>聚类筛选</span>
+                      <CollapsibleTrigger asChild>
+                        <button
+                          type="button"
+                          className="inline-flex items-center justify-center rounded-full border border-slate-200 px-2 py-1 text-[11px] text-slate-500 transition hover:bg-slate-50"
+                        >
+                          {isClusterLegendOpen ? (
+                            <ChevronUp className="h-3.5 w-3.5" />
+                          ) : (
+                            <ChevronDown className="h-3.5 w-3.5" />
+                          )}
+                        </button>
+                      </CollapsibleTrigger>
+                    </div>
+                    <CollapsibleContent>
+                      {/* 分组方式选择器 - 始终显示 */}
+                      <div className="flex items-center justify-between mb-3">
+                        <span className="text-xs font-medium text-slate-600">分组方式</span>
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <button
+                              type="button"
+                              className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-700 transition hover:border-slate-300"
+                            >
+                              <span>{clusterLegendMode === 'custom' ? '自定义' : '默认'}</span>
+                              <ChevronDown className="h-3.5 w-3.5 text-slate-500" />
+                            </button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-40 p-1" align="end">
+                            <button
+                              type="button"
+                              onClick={() => setClusterLegendMode('default')}
+                              className={`flex w-full items-center justify-between rounded-md px-3 py-2 text-sm transition ${
+                                clusterLegendMode === 'default'
+                                  ? 'bg-slate-100 text-slate-700'
+                                  : 'text-slate-600 hover:bg-slate-50'
+                              }`}
+                            >
+                              <span>默认</span>
+                              {clusterLegendMode === 'default' && <Check className="h-3.5 w-3.5" />}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setClusterLegendMode('custom')}
+                              className={`flex w-full items-center justify-between rounded-md px-3 py-2 text-sm transition ${
+                                clusterLegendMode === 'custom'
+                                  ? 'bg-slate-100 text-slate-700'
+                                  : 'text-slate-600 hover:bg-slate-50'
+                              }`}
+                            >
+                              <span>自定义</span>
+                              {clusterLegendMode === 'custom' && <Check className="h-3.5 w-3.5" />}
+                            </button>
+                          </PopoverContent>
+                        </Popover>
+                      </div>
+
+                      {clusterLegendMode === 'default' ? (
+                        // 默认模式：直接显示筛选列表
+                        <div className="space-y-2">
+                          {clusterLegendItems.map((item) => {
+                            const isEnabled = selectedClusters.includes(item.label);
+                            return (
+                              <button
+                                key={item.label}
+                                type="button"
+                                onClick={() => handleToggleCluster(item.label, !isEnabled)}
+                                className={`flex w-full items-center justify-between gap-3 rounded-lg border px-3 py-2 text-sm transition ${
+                                  isEnabled
+                                    ? 'border-slate-100 bg-slate-50/70 text-slate-700 hover:border-slate-200'
+                                    : 'border-slate-200 bg-slate-100/80 text-slate-400'
+                                }`}
+                                aria-pressed={isEnabled}
+                              >
+                                <div className="flex min-w-0 items-center gap-2">
+                                  <span
+                                    className="h-3 w-3 rounded-sm"
+                                    style={{ backgroundColor: item.color, opacity: isEnabled ? 1 : 0.4 }}
+                                  />
+                                  <span
+                                    className={`truncate ${isEnabled ? 'text-slate-700' : 'line-through'}`}
+                                  >
+                                    聚类 {item.label}
+                                  </span>
+                                </div>
+                                <span
+                                  className={`text-xs ${isEnabled ? 'text-slate-500' : 'text-slate-400'}`}
+                                >
+                                  {item.count}
+                                </span>
+                              </button>
+                            );
+                          })}
+                          {clusterLegendItems.length === 0 && (
+                            <div className="text-xs text-slate-500">暂无聚类图例</div>
+                          )}
+                        </div>
+                      ) : (
+                        // 自定义模式：使用合并的组件（不包含分组方式选择器）
+                        <CustomLegendGroups
+                          mode={clusterLegendMode}
+                          onModeChange={setClusterLegendMode}
+                          sourceItems={clusterLegendItems}
+                          customGroups={customClusterGroups}
+                          onCustomGroupsChange={setCustomClusterGroups}
+                          selectedItems={selectedClusters}
+                          onSelectionChange={(item, isSelected) => {
+                            handleToggleCluster(item, isSelected);
+                          }}
+                          type="cluster"
+                          hideModeSelector={true}
+                        />
+                      )}
                     </CollapsibleContent>
                   </Collapsible>
                 )}
@@ -2754,7 +3280,11 @@ const ScatterPage = () => {
                           <div className="flex items-center gap-3 text-xs">
                             <button
                               type="button"
-                              onClick={() => setInitialConfigColumns(initialConfigNumericColumns)}
+                              onClick={() => {
+                                // 全选时排除禁用的列
+                                const disabledCols = ['FSC-A', 'SSC-A', 'FSC-H', 'FSC-W', 'Time'];
+                                setInitialConfigColumns(initialConfigNumericColumns.filter(col => !disabledCols.includes(col)));
+                              }}
                               className="text-slate-500 transition hover:text-slate-700"
                             >
                               全选
@@ -2770,24 +3300,32 @@ const ScatterPage = () => {
                         )}
                       </div>
                       <div className="mt-3 max-h-60 space-y-2 overflow-y-auto pr-1">
-                        {initialConfigNumericColumns.map((label) => (
-                          <label
-                            key={label}
-                            className="flex items-center gap-2 text-sm text-slate-700"
-                          >
-                            <Checkbox
-                              checked={initialConfigColumns.includes(label)}
-                              onCheckedChange={(checked) =>
-                                handleToggleInitialConfigColumn(label, checked === true)
-                              }
-                            />
-                            <span className="truncate">{label}</span>
-                          </label>
-                        ))}
+                        {initialConfigNumericColumns.map((label) => {
+                          const disabledCols = ['FSC-A', 'SSC-A', 'FSC-H', 'FSC-W', 'Time'];
+                          const isDisabled = disabledCols.includes(label);
+                          return (
+                            <label
+                              key={label}
+                              className={`flex items-center gap-2 text-sm ${isDisabled ? 'text-slate-400' : 'text-slate-700'}`}
+                            >
+                              <Checkbox
+                                checked={initialConfigColumns.includes(label)}
+                                disabled={isDisabled}
+                                onCheckedChange={(checked) =>
+                                  handleToggleInitialConfigColumn(label, checked === true)
+                                }
+                              />
+                              <span className="truncate">{label}{isDisabled ? ' (不可用)' : ''}</span>
+                            </label>
+                          );
+                        })}
                         {initialConfigNumericColumns.length === 0 && (
                           <div className="text-xs text-slate-500">暂无可选列</div>
                         )}
                       </div>
+                      <p className="mt-2 text-xs text-slate-500">
+                        注：FSC-A、SSC-A、FSC-H、FSC-W、Time 列为系统保留列，不可选择
+                      </p>
                     </PopoverContent>
                   </Popover>
                   {initialConfigColumns.length > 0 && (
@@ -2834,23 +3372,26 @@ const ScatterPage = () => {
                             </div>
                             <div className="mt-3 max-h-60 space-y-2 overflow-y-auto pr-1">
                               {initialConfigAxisColumns.map((label) => {
+                                const disabledCols = ['FSC-A', 'SSC-A', 'FSC-H', 'FSC-W', 'Time'];
+                                const isDisabled = disabledCols.includes(label);
                                 const checked = initialConfigAxisX === label;
                                 return (
                                   <label
                                     key={label}
-                                    className="flex items-center gap-2 text-sm text-slate-700"
+                                    className={`flex items-center gap-2 text-sm ${isDisabled ? 'text-slate-400' : 'text-slate-700'}`}
                                   >
                                     <Checkbox
                                       checked={checked}
+                                      disabled={isDisabled}
                                       onCheckedChange={(value) => {
-                                        if (value === true) {
+                                        if (value === true && !isDisabled) {
                                           setInitialConfigAxisX(label);
                                         } else if (checked) {
                                           setInitialConfigAxisX('');
                                         }
                                       }}
                                     />
-                                    <span className="truncate">{label}</span>
+                                    <span className="truncate">{label}{isDisabled ? ' (不可用)' : ''}</span>
                                   </label>
                                 );
                               })}
@@ -2858,6 +3399,9 @@ const ScatterPage = () => {
                                 <div className="text-xs text-slate-500">暂无可选列</div>
                               )}
                             </div>
+                            <p className="mt-2 text-xs text-slate-500">
+                              注：FSC-A、SSC-A、FSC-H、FSC-W、Time 列为系统保留列，不可选择
+                            </p>
                           </PopoverContent>
                         </Popover>
                     </div>
@@ -2888,23 +3432,26 @@ const ScatterPage = () => {
                             </div>
                             <div className="mt-3 max-h-60 space-y-2 overflow-y-auto pr-1">
                               {initialConfigAxisColumns.map((label) => {
+                                const disabledCols = ['FSC-A', 'SSC-A', 'FSC-H', 'FSC-W', 'Time'];
+                                const isDisabled = disabledCols.includes(label);
                                 const checked = initialConfigAxisY === label;
                                 return (
                                   <label
                                     key={label}
-                                    className="flex items-center gap-2 text-sm text-slate-700"
+                                    className={`flex items-center gap-2 text-sm ${isDisabled ? 'text-slate-400' : 'text-slate-700'}`}
                                   >
                                     <Checkbox
                                       checked={checked}
+                                      disabled={isDisabled}
                                       onCheckedChange={(value) => {
-                                        if (value === true) {
+                                        if (value === true && !isDisabled) {
                                           setInitialConfigAxisY(label);
                                         } else if (checked) {
                                           setInitialConfigAxisY('');
                                         }
                                       }}
                                     />
-                                    <span className="truncate">{label}</span>
+                                    <span className="truncate">{label}{isDisabled ? ' (不可用)' : ''}</span>
                                   </label>
                                 );
                               })}
@@ -2912,6 +3459,9 @@ const ScatterPage = () => {
                                 <div className="text-xs text-slate-500">暂无可选列</div>
                               )}
                             </div>
+                            <p className="mt-2 text-xs text-slate-500">
+                              注：FSC-A、SSC-A、FSC-H、FSC-W、Time 列为系统保留列，不可选择
+                            </p>
                           </PopoverContent>
                         </Popover>
                     </div>
@@ -2921,15 +3471,22 @@ const ScatterPage = () => {
             </div>
 
             <div className="space-y-2">
-              <p className="text-sm font-medium text-slate-700">随机读取行数</p>
+              <p className="text-sm font-medium text-slate-700">
+                随机读取行数
+                <span className="ml-1 text-xs font-normal text-slate-500">(可选)</span>
+              </p>
               <Input
                 id="scatter-row-limit"
                 type="number"
-                min="1"
+                min="0"
                 value={initialConfigRowLimit}
                 onChange={(event) => setInitialConfigRowLimit(event.target.value)}
                 className="w-full"
+                placeholder="不输入则读取所有行"
               />
+              <p className="text-xs text-slate-500">
+                留空或输入0表示读取所有文件的全部行数
+              </p>
             </div>
           </div>
           <DialogFooter>
@@ -3001,13 +3558,17 @@ const ScatterPage = () => {
               <Label>变量</Label>
               {reductionColumnOptions.length > 0 && (
                 <div className="flex items-center gap-3 text-xs text-slate-500">
-                  <button
-                    type="button"
-                    onClick={() => setReductionColumns(reductionColumnOptions)}
-                    className="transition hover:text-slate-700"
-                  >
-                    全选
-                  </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        // 全选时排除禁用的列（降维分析只禁用 Time 列）
+                        const disabledCols = ['Time'];
+                        setReductionColumns(reductionColumnOptions.filter(col => !disabledCols.includes(col)));
+                      }}
+                      className="transition hover:text-slate-700"
+                    >
+                      全选
+                    </button>
                   <button
                     type="button"
                     onClick={() => setReductionColumns([])}
@@ -3019,21 +3580,30 @@ const ScatterPage = () => {
               )}
             </div>
             <div className="max-h-60 space-y-2 overflow-y-auto pr-1">
-              {reductionColumnOptions.map((label) => (
-                <label key={label} className="flex items-center gap-2 text-sm text-slate-700">
-                  <Checkbox
-                    checked={reductionColumns.includes(label)}
-                    onCheckedChange={(checked) =>
-                      handleToggleReductionColumn(label, checked === true)
-                    }
-                  />
-                  <span className="truncate">{label}</span>
-                </label>
-              ))}
+              {reductionColumnOptions.map((label) => {
+                // 降维分析只禁用 Time 列
+                const disabledCols = ['Time'];
+                const isDisabled = disabledCols.includes(label);
+                return (
+                  <label key={label} className={`flex items-center gap-2 text-sm ${isDisabled ? 'text-slate-400' : 'text-slate-700'}`}>
+                    <Checkbox
+                      checked={reductionColumns.includes(label)}
+                      disabled={isDisabled}
+                      onCheckedChange={(checked) =>
+                        handleToggleReductionColumn(label, checked === true)
+                      }
+                    />
+                    <span className="truncate">{label}{isDisabled ? ' (不可用)' : ''}</span>
+                  </label>
+                );
+              })}
               {reductionColumnOptions.length === 0 && (
                 <div className="text-xs text-slate-500">暂无可选列</div>
               )}
             </div>
+             <p className="text-xs text-slate-500">
+               注：Time 列为系统保留列，不可选择
+             </p>
           </div>
           <DialogFooter>
             <button
@@ -3229,6 +3799,59 @@ const ScatterPage = () => {
             <button
               type="button"
               onClick={handleCloseViewCluster}
+              className="inline-flex items-center justify-center rounded-full border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+            >
+              关闭
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 查看当前热图弹窗 */}
+      <Dialog open={isViewHeatmapOpen} onOpenChange={setIsViewHeatmapOpen}>
+        <DialogContent className="sm:max-w-6xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>
+              {customHeatmapData ? '自定义分组热图' : '热图聚类结果'}
+            </DialogTitle>
+            <DialogDescription>
+              {customHeatmapData
+                ? `根据自定义分组重新计算的热图（按组取平均值，标准化方式：${heatmapScale === 'column' ? '按列' : heatmapScale === 'row' ? '按行' : '无'}）`
+                : '查看当前最新的聚类热图分析结果'}
+            </DialogDescription>
+          </DialogHeader>
+
+          {/* 自定义分组模式：显示标准化方式说明 */}
+          {customHeatmapData && (
+            <div className="flex items-center gap-3 rounded-xl border border-amber-200 bg-amber-50/50 p-3">
+              <span className="text-sm font-medium text-slate-700">标准化方式：</span>
+              <span className="text-sm text-slate-600">按列标准化（每列减去均值，除以标准差）</span>
+            </div>
+          )}
+
+          {customHeatmapData ? (
+            // 自定义分组模式：使用简化版热图组件（无树形结构）
+            <SimpleHeatmapView
+              rows={customHeatmapData.rows}
+              cols={customHeatmapData.cols}
+              values={customHeatmapData.values}
+              title={`自定义分组热图（标准化：${heatmapScale === 'column' ? '按列' : heatmapScale === 'row' ? '按行' : '无'}）`}
+            />
+          ) : heatmapPayload?.heatmap ? (
+            // 默认模式：使用完整版热图组件（带树形结构）
+            <ViewClusterResultContent
+              data={{
+                heatmap: heatmapPayload.heatmap,
+                rowTree: heatmapPayload.rowTree,
+                colTree: heatmapPayload.colTree,
+                scatterData: clusterData.length > 0 ? clusterData : scatterData,
+              }}
+            />
+          ) : null}
+          <DialogFooter>
+            <button
+              type="button"
+              onClick={handleCloseViewHeatmap}
               className="inline-flex items-center justify-center rounded-full border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
             >
               关闭

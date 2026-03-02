@@ -64,6 +64,28 @@ const buildCsv = (rows) => {
   return lines.join('\n');
 };
 
+// 构建精简版CSV（去除x, y, cluster, group等列）
+const buildSimplifiedCsv = (rows) => {
+  if (!rows || rows.length === 0) return '';
+  const excludedColumns = new Set(['x', 'y', 'cluster', 'group', 'id', 'sourceId', '__index']);
+  const headers = Array.from(
+    rows.reduce((set, row) => {
+      Object.keys(row || {}).forEach((key) => {
+        if (!excludedColumns.has(key)) {
+          set.add(key);
+        }
+      });
+      return set;
+    }, new Set())
+  );
+  if (headers.length === 0) return '';
+  const lines = [
+    headers.join(','),
+    ...rows.map((row) => headers.map((key) => escapeValue(row?.[key])).join(',')),
+  ];
+  return lines.join('\n');
+};
+
 const buildHeatmapCsv = (heatmap) => {
   if (!heatmap || !Array.isArray(heatmap.values) || heatmap.values.length === 0) return '';
   const rows = heatmap.rows || [];
@@ -178,33 +200,68 @@ const ResultCard = ({ result }) => {
           <div className="border-t border-slate-100 bg-gradient-to-b from-slate-50/80 to-white px-6 py-5">
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {scatterCount > 0 && (
-                <button
-                  type="button"
-                  onClick={() => handleDownload('scatter', () =>
-                    downloadCsv(
-                      `scatter-dimension-${result.fileStamp}.csv`,
-                      normalizePointRows(result.scatterData)
-                    ), `scatter-dimension-${result.fileStamp}.csv`
-                  )}
-                  className="group flex items-center justify-between gap-4 rounded-xl border border-slate-200 bg-white p-4 text-left transition-all duration-300 hover:border-amber-300 hover:bg-gradient-to-r hover:from-amber-50/80 hover:to-rose-50/50 hover:shadow-lg hover:shadow-amber-200/30 active:scale-[0.98]"
-                >
-                  <div className="flex items-center gap-4">
-                    <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 text-white shadow-lg shadow-amber-500/30 transition-transform duration-300 group-hover:scale-110">
-                      <Database className="h-5 w-5" />
+                <>
+                  <button
+                    type="button"
+                    onClick={() => handleDownload('scatter', () =>
+                      downloadCsv(
+                        `scatter-dimension-${result.fileStamp}.csv`,
+                        normalizePointRows(result.scatterData)
+                      ), `scatter-dimension-${result.fileStamp}.csv`
+                    )}
+                    className="group flex items-center justify-between gap-4 rounded-xl border border-slate-200 bg-white p-4 text-left transition-all duration-300 hover:border-amber-300 hover:bg-gradient-to-r hover:from-amber-50/80 hover:to-rose-50/50 hover:shadow-lg hover:shadow-amber-200/30 active:scale-[0.98]"
+                  >
+                    <div className="flex items-center gap-4">
+                      <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 text-white shadow-lg shadow-amber-500/30 transition-transform duration-300 group-hover:scale-110">
+                        <Database className="h-5 w-5" />
+                      </div>
+                      <div>
+                        <p className="text-base font-semibold text-slate-900">降维数据表（完整）</p>
+                        <p className="text-sm text-slate-500">{scatterCount.toLocaleString()} 条记录</p>
+                      </div>
                     </div>
-                    <div>
-                      <p className="text-base font-semibold text-slate-900">降维数据表</p>
-                      <p className="text-sm text-slate-500">{scatterCount.toLocaleString()} 条记录</p>
+                    {isDownloading === 'scatter' ? (
+                      <Progress value={100} className="h-1.5 w-14 animate-pulse" />
+                    ) : (
+                      <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-100 text-slate-400 transition-all duration-300 group-hover:bg-white group-hover:shadow-md group-hover:text-amber-600">
+                        <Download className="h-5 w-5" />
+                      </div>
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleDownload('scatter-simplified', () => {
+                      const csv = buildSimplifiedCsv(normalizePointRows(result.scatterData));
+                      if (!csv) return;
+                      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+                      const link = document.createElement('a');
+                      link.href = URL.createObjectURL(blob);
+                      link.download = `scatter-dimension-simplified-${result.fileStamp}.csv`;
+                      document.body.appendChild(link);
+                      link.click();
+                      document.body.removeChild(link);
+                      URL.revokeObjectURL(link.href);
+                    }, `scatter-dimension-simplified-${result.fileStamp}.csv`)}
+                    className="group flex items-center justify-between gap-4 rounded-xl border border-amber-200 bg-amber-50/50 p-4 text-left transition-all duration-300 hover:border-amber-400 hover:bg-gradient-to-r hover:from-amber-50 hover:to-rose-50/50 hover:shadow-lg hover:shadow-amber-200/30 active:scale-[0.98]"
+                  >
+                    <div className="flex items-center gap-4">
+                      <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-amber-400 to-rose-500 text-white shadow-lg shadow-amber-500/30 transition-transform duration-300 group-hover:scale-110">
+                        <Database className="h-5 w-5" />
+                      </div>
+                      <div>
+                        <p className="text-base font-semibold text-slate-900">降维数据表（精简）</p>
+                        <p className="text-sm text-slate-500">去除坐标列</p>
+                      </div>
                     </div>
-                  </div>
-                  {isDownloading === 'scatter' ? (
-                    <Progress value={100} className="h-1.5 w-14 animate-pulse" />
-                  ) : (
-                    <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-100 text-slate-400 transition-all duration-300 group-hover:bg-white group-hover:shadow-md group-hover:text-amber-600">
-                      <Download className="h-5 w-5" />
-                    </div>
-                  )}
-                </button>
+                    {isDownloading === 'scatter-simplified' ? (
+                      <Progress value={100} className="h-1.5 w-14 animate-pulse" />
+                    ) : (
+                      <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-amber-100 text-amber-600 transition-all duration-300 group-hover:bg-white group-hover:shadow-md">
+                        <Download className="h-5 w-5" />
+                      </div>
+                    )}
+                  </button>
+                </>
               )}
               {heatmapValues > 0 && (
                 <button

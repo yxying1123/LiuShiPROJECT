@@ -92,7 +92,7 @@ const FileListPage = () => {
             className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-amber-300 hover:text-amber-700"
           >
             <Layers className="h-4 w-4" />
-            数据导入
+            FCS文件导入
           </button>
           <button
             type="button"
@@ -100,7 +100,7 @@ const FileListPage = () => {
             className="inline-flex items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-700 shadow-sm transition hover:border-amber-300 hover:bg-amber-100"
           >
             <Upload className="h-4 w-4" />
-            上传文件
+            CSV文件导入
           </button>
         </div>
       }

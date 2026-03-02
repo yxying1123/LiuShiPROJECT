@@ -1,6 +1,9 @@
 import React from 'react';
 import { BarChart3 } from 'lucide-react';
 
+// 默认禁用的列名（FCS文件中的标准通道名）
+const DISABLED_COLUMNS = ['FSC-A', 'SSC-A', 'FSC-H', 'FSC-W', 'time'];
+
 const ColumnSelector = ({ columns, selectedX, selectedY, onXChange, onYChange }) => {
   if (!columns || columns.length === 0) {
     return (
@@ -28,11 +31,14 @@ const ColumnSelector = ({ columns, selectedX, selectedY, onXChange, onYChange })
             className="w-full rounded-xl border border-slate-200 bg-white/80 p-2.5 text-sm focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
           >
             <option value="">请选择X轴数据列</option>
-            {columns.map((column) => (
-              <option key={column} value={column}>
-                {column}
-              </option>
-            ))}
+            {columns.map((column) => {
+              const isDisabled = DISABLED_COLUMNS.includes(column);
+              return (
+                <option key={column} value={column} disabled={isDisabled} className={isDisabled ? 'text-gray-400' : ''}>
+                  {column}{isDisabled ? ' (不可用)' : ''}
+                </option>
+              );
+            })}
           </select>
         </div>
         <div>
@@ -45,14 +51,20 @@ const ColumnSelector = ({ columns, selectedX, selectedY, onXChange, onYChange })
             className="w-full rounded-xl border border-slate-200 bg-white/80 p-2.5 text-sm focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
           >
             <option value="">请选择Y轴数据列</option>
-            {columns.map((column) => (
-              <option key={column} value={column}>
-                {column}
-              </option>
-            ))}
+            {columns.map((column) => {
+              const isDisabled = DISABLED_COLUMNS.includes(column);
+              return (
+                <option key={column} value={column} disabled={isDisabled} className={isDisabled ? 'text-gray-400' : ''}>
+                  {column}{isDisabled ? ' (不可用)' : ''}
+                </option>
+              );
+            })}
           </select>
         </div>
       </div>
+      <p className="mt-3 text-xs text-slate-500">
+        注：FSC-A、SSC-A、FSC-H、FSC-W、time 列为系统保留列，不可选择
+      </p>
     </div>
   );
 };

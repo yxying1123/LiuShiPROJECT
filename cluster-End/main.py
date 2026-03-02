@@ -293,8 +293,12 @@ async def download_file(filename: str):
     path = _resolve_storage_path(safe_name)
     if not os.path.exists(path):
         raise HTTPException(status_code=404, detail="文件不存在")
-    file_handle = open(path, "rb")
-    response = StreamingResponse(file_handle, media_type="application/octet-stream")
+
+    def file_iterator():
+        with open(path, "rb") as file_handle:
+            yield from file_handle
+
+    response = StreamingResponse(file_iterator(), media_type="application/octet-stream")
     response.headers["Content-Disposition"] = f'attachment; filename="{os.path.basename(path)}"'
     return response
 
@@ -321,7 +325,7 @@ async def files_metadata_all(limit: int = 500):
 @app.post("/upload/file")
 async def upload_file(
     files: List[UploadFile] = File(None),  # 接收多个文件
-    lineNum: int = Form(...),              # 接收数字类型的表单字段
+    lineNum: int = Form(0),                # 接收数字类型的表单字段，默认为0表示读取所有行
     columns: List[str] = Form(...),        # 接收多个 columns 参数
     fileNames: List[str] = Form(None),
 ):
@@ -357,7 +361,7 @@ async def upload_file(
 @app.post("/upload/xy")
 async def upload_xy(
     files: List[UploadFile] = File(None),
-    lineNum: int = Form(...),
+    lineNum: int = Form(0),  # 默认为0表示读取所有行
     xColumn: str = Form(...),
     yColumn: str = Form(...),
     fileNames: List[str] = Form(None),
@@ -629,6 +633,6 @@ async def http_exception_handler(request: Request, exc: Exception):
     )
     content = payload.model_dump() if hasattr(payload, "model_dump") else payload.dict()
     return JSONResponse(
-        status_code= 200,
+        status_code=500,
         content=content
     )

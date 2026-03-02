@@ -35,7 +35,7 @@ def load_and_sample(
 
     参数：
     files (List[UploadFile]): 一个包含多个上传文件的列表。每个文件都是一个 UploadFile 对象。
-    lineNum (int): 每个文件中需要随机采样的行数。
+    lineNum (int): 每个文件中需要随机采样的行数。如果 <= 0，则读取所有行。
     columns (List[str]): 一个包含变量的列表，指定需要参与降维的列。
     return_all (bool): 是否额外返回包含所有列的采样数据。
 
@@ -63,12 +63,18 @@ def load_and_sample(
         if df_reduction.shape[1] == 0:
             continue
 
-        n = min(lineNum, df_reduction.shape[0])
-        if n <= 0:
-            continue
-        sampled_idx = df_reduction.sample(n=n, random_state=42).index
-        sampled_reduction = df_reduction.loc[sampled_idx].reset_index(drop=True)
-        sampled_full = df.loc[sampled_idx].reset_index(drop=True)
+        # 当 lineNum <= 0 时，读取所有行
+        if lineNum <= 0:
+            n = df_reduction.shape[0]
+            sampled_reduction = df_reduction.reset_index(drop=True)
+            sampled_full = df.reset_index(drop=True)
+        else:
+            n = min(lineNum, df_reduction.shape[0])
+            if n <= 0:
+                continue
+            sampled_idx = df_reduction.sample(n=n, random_state=42).index
+            sampled_reduction = df_reduction.loc[sampled_idx].reset_index(drop=True)
+            sampled_full = df.loc[sampled_idx].reset_index(drop=True)
 
         sam.extend([group] * n)
         data_list.append(sampled_reduction)
@@ -138,7 +144,7 @@ def run_phenograph(data, k=20, resolution=3.0, n_iterations=20, seed=123):
     """
     n_samples = data.shape[0]
     if n_samples <= 2:
-        communities = np.array(["0"] * n_samples, dtype=str)
+        communities = np.array([0] * n_samples, dtype=int)
         return communities, 0.0
 
     effective_k = min(int(k), n_samples - 1)
@@ -153,9 +159,8 @@ def run_phenograph(data, k=20, resolution=3.0, n_iterations=20, seed=123):
         adj_matrix[i, indices[i]] = 1
     adj_matrix = adj_matrix.tocsr()
 
-    adj_matrix = adj_matrix.maximum(adj_matrix.T)
-    adj_matrix_sym = adj_matrix + adj_matrix.T
-    adj_matrix_sym.data = np.ones_like(adj_matrix_sym.data)
+    # 构建对称邻接矩阵：确保如果 i->j 存在，则 j->i 也存在
+    adj_matrix_sym = adj_matrix.maximum(adj_matrix.T)
     adj_matrix_sym = adj_matrix_sym.tocoo()
 
     edges = np.column_stack([adj_matrix_sym.row, adj_matrix_sym.col])

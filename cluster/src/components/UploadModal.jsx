@@ -32,7 +32,7 @@ const UploadModal = ({
           >
             <div className="flex items-center justify-between border-b border-slate-200 p-6">
               <h3 className="text-xl font-semibold bg-gradient-to-r from-amber-600 to-rose-600 bg-clip-text text-transparent">
-                上传文件
+                CSV文件导入
               </h3>
               <button
                 onClick={onClose}

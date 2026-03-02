@@ -55,6 +55,9 @@ const ScatterPlot = ({
   pointSize = 4.5,
   fontScale = 1,
   lockAspect = false,
+  // 自定义分组支持
+  customGroups = null,
+  customGroupType = 'source',
 }) => {
   const [selectedIds, setSelectedIds] = useState([]);
   const [autoHeight, setAutoHeight] = useState(height);
@@ -160,6 +163,21 @@ const ScatterPlot = ({
     const groups = new Map();
     const hasFilter = Array.isArray(filterSources);
     const hasGroupFilter = Array.isArray(filterGroups);
+    
+    // 如果启用了自定义分组，构建自定义分组映射
+    const hasCustomGroups = Array.isArray(customGroups) && customGroups.length > 0;
+    const customGroupMap = new Map(); // source/cluster -> customGroup
+    const customGroupInfo = new Map(); // groupId -> {name, color}
+    
+    if (hasCustomGroups) {
+      customGroups.forEach((group) => {
+        customGroupInfo.set(group.id, { name: group.name, color: group.color });
+        group.sources.forEach((source) => {
+          customGroupMap.set(source, group.id);
+        });
+      });
+    }
+    
     (data || []).forEach((point, index) => {
       const rawSourceValue = point.source ?? point.sourceId ?? '未知';
       const sourceValue = rawSourceValue === '' ? '未知' : rawSourceValue;
@@ -176,36 +194,87 @@ const ScatterPlot = ({
       if (hasGroupFilter && !filterGroups.includes(groupLabel)) {
         return;
       }
-      const label =
-        groupBy === 'source-group'
-          ? `${sourceValue} · ${groupLabel}`
-          : groupBy === 'group'
-            ? groupLabel
-            : sourceValue;
+      
+      // 确定标签逻辑
+      let label;
+      let customGroupId = null;
+      
+      if (groupBy === 'source-group') {
+        label = `${sourceValue} · ${groupLabel}`;
+      } else if (groupBy === 'group') {
+        label = groupLabel;
+      } else {
+        label = sourceValue;
+      }
+      
+      // 如果使用自定义分组
+      if (hasCustomGroups) {
+        const keyToCheck = customGroupType === 'source' ? sourceValue : groupLabel;
+        customGroupId = customGroupMap.get(keyToCheck);
+        if (customGroupId) {
+          label = `__custom_${customGroupId}`;
+        }
+      }
+      
       if (!groups.has(label)) {
         groups.set(label, []);
       }
-      groups.get(label).push({ ...point, __index: index });
+      groups.get(label).push({ ...point, __index: index, __customGroupId: customGroupId });
     });
+    
     const entries = Array.from(groups.entries());
+    
+    // 按自定义分组顺序排序
+    if (hasCustomGroups) {
+      const ordered = [];
+      const used = new Set();
+      
+      // 先按自定义分组顺序添加
+      customGroups.forEach((group) => {
+        const label = `__custom_${group.id}`;
+        if (groups.has(label)) {
+          ordered.push([label, groups.get(label), { 
+            isCustom: true, 
+            name: group.name, 
+            color: group.color 
+          }]);
+          used.add(label);
+        }
+      });
+      
+      // 添加未分组的项
+      entries.forEach(([label, points]) => {
+        if (!used.has(label)) {
+          const point = points[0];
+          const originalLabel = point?.__customGroupId 
+            ? customGroupInfo.get(point.__customGroupId)?.name || label
+            : label;
+          ordered.push([originalLabel, points, { isCustom: false }]);
+        }
+      });
+      
+      return ordered;
+    }
+    
     if (Array.isArray(groupOrder) && groupOrder.length > 0) {
       const ordered = [];
       const used = new Set();
       groupOrder.forEach((label) => {
         if (groups.has(label)) {
-          ordered.push([label, groups.get(label)]);
+          ordered.push([label, groups.get(label), { isCustom: false }]);
           used.add(label);
         }
       });
       entries.forEach(([label, points]) => {
         if (!used.has(label)) {
-          ordered.push([label, points]);
+          ordered.push([label, points, { isCustom: false }]);
         }
       });
       return ordered;
     }
-    return entries;
-  }, [data, filterSources, filterGroups, groupBy, groupField, groupOrder]);
+    
+    return entries.map(([label, points]) => [label, points, { isCustom: false }]);
+  }, [data, filterSources, filterGroups, groupBy, groupField, groupOrder, customGroups, customGroupType]);
 
   const fallbackRange = useMemo(() => {
     if (!data || data.length === 0) return null;
@@ -264,13 +333,28 @@ const ScatterPlot = ({
     const orderedLabels =
       Array.isArray(groupOrder) && groupOrder.length > 0
         ? groupOrder
-        : groupedData.map(([label]) => label);
+        : groupedData.map(([label, , meta]) => meta?.isCustom ? meta.name : label);
     const colorMap = new Map();
     const colorTotal = orderedLabels.length || groupedData.length || 1;
-    orderedLabels.forEach((label, idx) => {
-      colorMap.set(label, getScatterColor(idx, colorTotal));
+    
+    // 先处理自定义分组的颜色
+    groupedData.forEach(([label, , meta]) => {
+      if (meta?.isCustom) {
+        colorMap.set(label, meta.color);
+      }
     });
-    return groupedData.map(([label, points], idx) => {
+    
+    // 再处理非自定义分组的颜色
+    orderedLabels.forEach((label, idx) => {
+      if (!colorMap.has(label)) {
+        colorMap.set(label, getScatterColor(idx, colorTotal));
+      }
+    });
+    
+    return groupedData.map(([label, points, meta], idx) => {
+      // 使用自定义分组的名称作为显示标签
+      const displayLabel = meta?.isCustom ? meta.name : label;
+      const displayColor = meta?.isCustom ? meta.color : (colorMap.get(label) ?? getScatterColor(idx, colorTotal));
       const selectedPoints = [];
       points.forEach((point, pointIndex) => {
         if (selectedSet.has(point.__index)) {
@@ -318,7 +402,7 @@ const ScatterPlot = ({
           }
         : {
             size: baseSize,
-            color: colorMap.get(label) ?? getScatterColor(idx, colorTotal),
+            color: displayColor,
             opacity: baseOpacity,
             line: {
               width: 0,
@@ -339,7 +423,7 @@ const ScatterPlot = ({
       return {
         type: 'scattergl',
         mode: 'markers',
-        name: label,
+        name: displayLabel,
         x: points.map((point) => point.x),
         y: points.map((point) => point.y),
         customdata: points.map((point) => [
@@ -384,6 +468,8 @@ const ScatterPlot = ({
     valueField,
     xLabel,
     yLabel,
+    customGroups,
+    customGroupType,
   ]);
 
   const handleSelected = (event) => {

@@ -74,6 +74,28 @@ const buildCsv = (rows) => {
   return lines.join('\n');
 };
 
+// 构建精简版CSV（去除x, y, cluster, group等列）
+const buildSimplifiedCsv = (rows) => {
+  if (!rows || rows.length === 0) return '';
+  const excludedColumns = new Set(['x', 'y', 'cluster', 'group', 'id', 'sourceId', '__index']);
+  const headers = Array.from(
+    rows.reduce((set, row) => {
+      Object.keys(row || {}).forEach((key) => {
+        if (!excludedColumns.has(key)) {
+          set.add(key);
+        }
+      });
+      return set;
+    }, new Set())
+  );
+  if (headers.length === 0) return '';
+  const lines = [
+    headers.join(','),
+    ...rows.map((row) => headers.map((key) => escapeValue(row?.[key])).join(',')),
+  ];
+  return lines.join('\n');
+};
+
 const buildHeatmapCsv = (heatmap) => {
   if (!heatmap || !Array.isArray(heatmap.values) || heatmap.values.length === 0) return '';
   const rows = heatmap.rows || [];
@@ -291,6 +313,22 @@ const ClusterResultsPanel = forwardRef(({ onUseAsInput }, ref) => {
     const timestamp = new Date().toISOString().replace(/[-:TZ.]/g, '').slice(0, 14);
     const rows = remapScatterRowsForExport(filteredScatterPoints, scatterAxisLabelMap);
     downloadCsv(`scatter-table-${timestamp}.csv`, rows);
+  };
+
+  const handleDownloadSimplifiedScatterCsv = () => {
+    if (!filteredScatterPoints || filteredScatterPoints.length === 0) return;
+    const timestamp = new Date().toISOString().replace(/[-:TZ.]/g, '').slice(0, 14);
+    const rows = remapScatterRowsForExport(filteredScatterPoints, scatterAxisLabelMap);
+    const csv = buildSimplifiedCsv(rows);
+    if (!csv) return;
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `scatter-table-simplified-${timestamp}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(link.href);
   };
 
   const handleDownloadClusterCsv = () => {
@@ -878,14 +916,28 @@ const ClusterResultsPanel = forwardRef(({ onUseAsInput }, ref) => {
         <TabsContent value="scatter-table">
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white/90 p-4">
             <div className="text-sm text-slate-600">散点表</div>
-            <button
-              type="button"
-              onClick={handleDownloadScatterCsv}
-              className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 transition hover:bg-slate-50"
-            >
-              <Download className="h-4 w-4" />
-              下载散点表
-            </button>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={handleDownloadScatterCsv}
+                disabled={!filteredScatterPoints || filteredScatterPoints.length === 0}
+                className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
+                title="下载包含所有列的完整CSV文件"
+              >
+                <Download className="h-4 w-4" />
+                下载完整CSV
+              </button>
+              <button
+                type="button"
+                onClick={handleDownloadSimplifiedScatterCsv}
+                disabled={!filteredScatterPoints || filteredScatterPoints.length === 0}
+                className="inline-flex items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-sm text-amber-700 transition hover:bg-amber-100 disabled:opacity-50"
+                title="下载去除x,y,cluster,group等坐标列的精简版CSV文件"
+              >
+                <Download className="h-4 w-4" />
+                下载精简CSV
+              </button>
+            </div>
           </div>
           <div className="mt-3 rounded-2xl border border-slate-200 bg-white/90 p-4">
             {filteredScatterPoints.length === 0 ? (
