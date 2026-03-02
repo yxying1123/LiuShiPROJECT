@@ -11,7 +11,7 @@ const LoginPage = () => {
 
   useEffect(() => {
     if (isAuthenticated) {
-      navigate('/results');
+      navigate('/files');
     }
   }, [isAuthenticated, navigate]);
 
@@ -20,7 +20,7 @@ const LoginPage = () => {
     setError('');
     const ok = login(username.trim(), password);
     if (ok) {
-      navigate('/results');
+      navigate('/files');
     } else {
       setError('用户名或密码不正确');
     }

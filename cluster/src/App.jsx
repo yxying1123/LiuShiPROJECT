@@ -15,7 +15,7 @@ const App = () => (
       <DataProvider>
         <HashRouter>
           <Routes>
-            <Route path="/" element={<Navigate to="/results" replace />} />
+            <Route path="/" element={<Navigate to="/files" replace />} />
             <Route path="/cluster" element={<ClusterRunPage />} />
             <Route path="/heatmap" element={<Navigate to="/cluster" replace />} />
             {navItems.map(({ to, page }) => (
