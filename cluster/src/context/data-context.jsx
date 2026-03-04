@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { parseCSVFile, extractNumericColumns } from '../utils/dataParser';
 import { requestApi } from '../utils/apiClient';
@@ -35,6 +35,19 @@ export const DataProvider = ({ children }) => {
   const [rowLimit, setRowLimit] = useState(1000);
   const [analysisResetToken, setAnalysisResetToken] = useState(0);
   const [heatmapPayload, setHeatmapPayload] = useState(null);
+
+  // 使用 refs 跟踪最新状态，供异步回调使用
+  const scatterDataRef = useRef(scatterData);
+  const selectedPointsRef = useRef(selectedPoints);
+  const showClusterRef = useRef(showCluster);
+  const scatterHistoryRef = useRef(scatterHistory);
+  const scatterFutureRef = useRef(scatterFuture);
+
+  useEffect(() => { scatterDataRef.current = scatterData; }, [scatterData]);
+  useEffect(() => { selectedPointsRef.current = selectedPoints; }, [selectedPoints]);
+  useEffect(() => { showClusterRef.current = showCluster; }, [showCluster]);
+  useEffect(() => { scatterHistoryRef.current = scatterHistory; }, [scatterHistory]);
+  useEffect(() => { scatterFutureRef.current = scatterFuture; }, [scatterFuture]);
 
   const isLocalFileObject = useCallback((file) => {
     if (typeof File === 'undefined') return false;
@@ -343,71 +356,95 @@ export const DataProvider = ({ children }) => {
     setWarning('');
   }, [scatterMode]);
 
-  const snapshotScatterState = useCallback(() => {
-    if (!scatterData || scatterData.length === 0) return;
-    setScatterHistory((prev) => [
-      ...prev,
-      {
-        scatterData,
-        selectedPoints,
-      },
-    ]);
+  const snapshotScatterState = useCallback((snapshotData = null) => {
+    // 使用传入的数据或 ref 中的当前数据
+    const dataToSave = snapshotData || scatterDataRef.current;
+    console.log('[snapshot] saving state, points count:', dataToSave?.length);
+    if (!dataToSave || dataToSave.length === 0) return;
+    setScatterHistory((prev) => {
+      const newHistory = [
+        ...prev,
+        {
+          scatterData: dataToSave.map((point) => ({ ...point })),
+          selectedPoints: (selectedPointsRef.current || []).map((point) => ({ ...point })),
+          showCluster: showClusterRef.current ?? false,
+        },
+      ];
+      console.log('[snapshot] history length:', newHistory.length);
+      return newHistory;
+    });
     setScatterFuture([]);
-  }, [scatterData, selectedPoints]);
+  }, []);
 
   const restoreScatterPrevious = useCallback(() => {
-    let lastSnapshot = null;
-    setScatterHistory((prev) => {
-      if (prev.length === 0) return prev;
-      lastSnapshot = prev[prev.length - 1];
-      return prev.slice(0, -1);
-    });
-    if (!lastSnapshot) return;
-    setScatterFuture((prev) => [
-      ...prev,
+    const history = scatterHistoryRef.current || [];
+    if (history.length === 0) return;
+    const lastSnapshot = history[history.length - 1];
+    console.log('[restore] restoring from history, history length:', history.length);
+    console.log('[restore] snapshot scatterData length:', lastSnapshot?.scatterData?.length);
+    console.log('[restore] snapshot showCluster:', lastSnapshot?.showCluster);
+    setScatterHistory(history.slice(0, -1));
+    const future = scatterFutureRef.current || [];
+    setScatterFuture([
+      ...future,
       {
-        scatterData,
-        selectedPoints,
+        scatterData: (scatterDataRef.current || []).map((point) => ({ ...point })),
+        selectedPoints: (selectedPointsRef.current || []).map((point) => ({ ...point })),
+        showCluster: showClusterRef.current ?? false,
       },
     ]);
-    const restoredScatter = lastSnapshot.scatterData || [];
+    const restoredScatter = (lastSnapshot.scatterData || []).map((p, i) => ({...p, __restoreId: i}));
     const restoredHasCluster = hasClusterLabels(restoredScatter);
-    setScatterData(restoredScatter);
-    setSelectedPoints(lastSnapshot.selectedPoints || []);
-    setClusterData(restoredHasCluster ? restoredScatter : []);
+    console.log('[restore] restored scatterData length:', restoredScatter.length);
+    console.log('[restore] restored hasCluster:', restoredHasCluster);
+    console.log('[restore] restored sample point:', restoredScatter[0]);
+    // 使用函数式更新确保 React 检测到变化
+    setScatterData(() => restoredScatter);
+    setSelectedPoints(() => (lastSnapshot.selectedPoints || []).map((p, i) => ({...p, __restoreId: i})));
+    const newClusterData = restoredHasCluster ? restoredScatter : [];
+    console.log('[restore] setting clusterData length:', newClusterData.length);
+    setClusterData(() => newClusterData);
     setHeatmapPayload(null);
-    setShowCluster(restoredHasCluster);
+    // 使用快照中保存的 showCluster 状态（兼容旧数据）
+    const restoredShowCluster = lastSnapshot.showCluster !== undefined 
+      ? lastSnapshot.showCluster 
+      : restoredHasCluster;
+    console.log('[restore] setting showCluster to:', restoredShowCluster);
+    setShowCluster(restoredShowCluster);
     setError('');
     setWarning('');
     toast.success('已返回上一步散点图');
-  }, [hasClusterLabels, scatterData, selectedPoints]);
+  }, [hasClusterLabels]);
 
   const restoreScatterNext = useCallback(() => {
-    let nextSnapshot = null;
-    setScatterFuture((prev) => {
-      if (prev.length === 0) return prev;
-      nextSnapshot = prev[prev.length - 1];
-      return prev.slice(0, -1);
-    });
-    if (!nextSnapshot) return;
-    setScatterHistory((prev) => [
-      ...prev,
+    const future = scatterFutureRef.current || [];
+    if (future.length === 0) return;
+    const nextSnapshot = future[future.length - 1];
+    setScatterFuture(future.slice(0, -1));
+    const history = scatterHistoryRef.current || [];
+    setScatterHistory([
+      ...history,
       {
-        scatterData,
-        selectedPoints,
+        scatterData: (scatterDataRef.current || []).map((point) => ({ ...point })),
+        selectedPoints: (selectedPointsRef.current || []).map((point) => ({ ...point })),
+        showCluster: showClusterRef.current ?? false,
       },
     ]);
-    const restoredScatter = nextSnapshot.scatterData || [];
+    const restoredScatter = (nextSnapshot.scatterData || []).map((p, i) => ({...p, __restoreId: i}));
     const restoredHasCluster = hasClusterLabels(restoredScatter);
-    setScatterData(restoredScatter);
-    setSelectedPoints(nextSnapshot.selectedPoints || []);
-    setClusterData(restoredHasCluster ? restoredScatter : []);
+    setScatterData(() => restoredScatter);
+    setSelectedPoints(() => (nextSnapshot.selectedPoints || []).map((p, i) => ({...p, __restoreId: i})));
+    setClusterData(() => restoredHasCluster ? restoredScatter : []);
     setHeatmapPayload(null);
-    setShowCluster(restoredHasCluster);
+    // 使用快照中保存的 showCluster 状态（兼容旧数据）
+    const restoredShowCluster = nextSnapshot.showCluster !== undefined 
+      ? nextSnapshot.showCluster 
+      : restoredHasCluster;
+    setShowCluster(restoredShowCluster);
     setError('');
     setWarning('');
     toast.success('已返回下一步散点图');
-  }, [hasClusterLabels, scatterData, selectedPoints]);
+  }, [hasClusterLabels]);
 
   const mapResponseToScatter = useCallback((payload, options = {}) => {
     const { xKey, yKey, sampleKey } = options;
@@ -564,7 +601,7 @@ export const DataProvider = ({ children }) => {
       setShowCluster(false);
       return true;
     } catch (err) {
-      setError(err.message || '获取散点图失败');
+      setError(err.message || '获取获取散点图失败');
       return false;
     } finally {
       setIsLoading(false);
@@ -697,9 +734,7 @@ export const DataProvider = ({ children }) => {
       const nextHasCluster = hasClusterLabels(nextPoints);
       setError('');
       setWarning('');
-      if (nextPoints.length > 0) {
-        snapshotScatterState();
-      }
+      snapshotScatterState();
       setScatterData(nextPoints);
       setSelectedPoints([]);
       setClusterData(nextHasCluster ? nextPoints : []);
@@ -760,7 +795,14 @@ export const DataProvider = ({ children }) => {
         setIsLoading(false);
       }
     },
-    [buildSelectPayload, hasClusterLabels, mapResponseToScatter, mergeClusterLabels, rowLimit, snapshotScatterState]
+    [
+      buildSelectPayload,
+      hasClusterLabels,
+      mapResponseToScatter,
+      mergeClusterLabels,
+      rowLimit,
+      snapshotScatterState,
+    ]
   );
 
   const handleScatterSelection = useCallback((selected) => {
@@ -774,9 +816,31 @@ export const DataProvider = ({ children }) => {
     }
     setError('');
     setWarning('');
-    snapshotScatterState();
-    const nextPoints = selectedPoints;
+    // 保存当前完整数据到历史记录
+    // 使用函数式更新确保获取最新状态
+    const currentData = scatterDataRef.current || [];
+    const currentSelected = selectedPointsRef.current || [];
+    const currentShowCluster = showClusterRef.current ?? false;
+    console.log('[confirm] BEFORE save - current scatterData length:', currentData.length);
+    console.log('[confirm] BEFORE save - selected points length:', selectedPoints.length);
+    console.log('[confirm] BEFORE save - showCluster:', currentShowCluster);
+    
+    setScatterHistory((prev) => {
+      const newHistory = [
+        ...prev,
+        {
+          scatterData: currentData.map((point) => ({ ...point })),
+          selectedPoints: currentSelected.map((point) => ({ ...point })),
+          showCluster: currentShowCluster,
+        },
+      ];
+      console.log('[confirm] history length after save:', newHistory.length);
+      return newHistory;
+    });
+    setScatterFuture([]);
+    const nextPoints = selectedPoints.map((p) => ({ ...p }));
     const nextHasCluster = hasClusterLabels(nextPoints);
+    console.log('[confirm] AFTER save - setting scatterData to:', nextPoints.length);
     setScatterData(nextPoints);
     setSelectedPoints([]);
     setClusterData(nextHasCluster ? nextPoints : []);
@@ -784,7 +848,7 @@ export const DataProvider = ({ children }) => {
     setShowCluster(nextHasCluster);
     toast.success('筛选完成');
     return true;
-  }, [hasClusterLabels, selectedPoints, snapshotScatterState]);
+  }, [hasClusterLabels, selectedPoints]);
 
   const runHeatmapRequest = useCallback(
     async (points, emptyMessage, options = {}) => {
