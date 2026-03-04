@@ -515,7 +515,7 @@ export const DataProvider = ({ children }) => {
       rows.forEach((point) => {
         Object.keys(point || {}).forEach((key) => {
           if (
-            ['id', 'x', 'y', 'source', 'sourceId', 'group', 'cluster', '__index'].includes(key)
+            ['id', 'x', 'y', 'source', 'sourceId', 'group', 'cluster', '__index', '__restoreId'].includes(key)
           ) {
             return;
           }
@@ -865,7 +865,7 @@ export const DataProvider = ({ children }) => {
       try {
         const payloadPoints = points.map((point) => {
           if (!point || typeof point !== 'object') return {};
-          const { originalData, x, y, group, cluster, __index, ...rest } = point;
+          const { originalData, x, y, group, cluster, __index, __restoreId, ...rest } = point;
           if (scatterMode === '2d' && scatterAxisX && scatterAxisY) {
             return {
               ...rest,

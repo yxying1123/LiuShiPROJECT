@@ -156,7 +156,10 @@ const SimpleHeatmapView = ({ rows = [], cols = [], values = [], title = '自定�
   // 计算热图尺寸
   const cellWidth = 50;
   const cellHeight = 40;
-  const rowLabelWidth = 100;
+  const rowLabelWidth = useMemo(() => {
+    const maxLength = rows.reduce((max, row) => Math.max(max, String(row || '').length), 0);
+    return Math.max(120, Math.min(320, maxLength * 8));
+  }, [rows]);
   const colLabelHeight = 80;
   const colorBarWidth = 20;
   const colorBarHeight = Math.max(150, rows.length * cellHeight);
@@ -220,7 +223,7 @@ const SimpleHeatmapView = ({ rows = [], cols = [], values = [], title = '自定�
                             className="flex items-center justify-end pr-3"
                             style={{ height: cellHeight }}
                           >
-                            <span className="text-xs font-medium text-slate-700 truncate" title={row}>
+                            <span className="text-xs font-medium text-slate-700" title={row}>
                               {row}
                             </span>
                           </div>

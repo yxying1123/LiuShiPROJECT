@@ -54,7 +54,7 @@ const formatTableValue = (value) => {
 // 构建散点表列
 const buildScatterTableColumns = (rows) => {
   if (!rows || rows.length === 0) return [];
-  const excluded = new Set(['id', 'originalData', '__index']);
+  const excluded = new Set(['id', 'originalData', '__index', '__restoreId']);
   const keys = new Set();
   rows.forEach((row) => {
     Object.keys(row || {}).forEach((key) => {
@@ -98,7 +98,7 @@ const buildCsv = (rows) => {
 // 构建精简版CSV（去除x, y, cluster, group列）
 const buildSimplifiedCsv = (rows) => {
   if (!rows || rows.length === 0) return '';
-  const excludedColumns = new Set(['x', 'y', 'cluster', 'group', 'id', 'sourceId', '__index']);
+  const excludedColumns = new Set(['x', 'y', 'cluster', 'group', 'id', 'sourceId', '__index', '__restoreId']);
   const headers = Array.from(
     rows.reduce((set, row) => {
       Object.keys(row || {}).forEach((key) => {
@@ -575,8 +575,12 @@ const ScatterPage = () => {
   const [viewClusterData, setViewClusterData] = useState(null);
   // 查看当前热图弹窗状态
   const [isViewHeatmapOpen, setIsViewHeatmapOpen] = useState(false);
-  // 自定义分组热图数据（当使用自定义分组时重新计算）
+  // 按当前图例模式动态计算的热图数据
   const [customHeatmapData, setCustomHeatmapData] = useState(null);
+  const [viewHeatmapMeta, setViewHeatmapMeta] = useState({
+    title: '热图聚类结果',
+    description: '查看当前最新的聚类热图分析结果',
+  });
   // 热图标准化方式：'column' | 'row' | 'none'（与后端一致，默认为 column）
   const [heatmapScale, setHeatmapScale] = useState('column');
   const layoutReady = analysisAreaReady && scatterPanelReady;
@@ -646,6 +650,7 @@ const ScatterPage = () => {
       'cluster',
       'originalData',
       '__index',
+      '__restoreId',
     ]);
     const keys = new Set();
     analysisSourcePoints.forEach((point) => {
@@ -833,6 +838,7 @@ const ScatterPage = () => {
       'cluster',
       'originalData',
       '__index',
+      '__restoreId',
     ]);
     const keys = new Set();
     (sourceData || []).forEach((point) => {
@@ -1207,7 +1213,7 @@ const ScatterPage = () => {
 
   const colorFieldOptions = useMemo(() => {
     if (!hasScatterData || activeScatterData.length === 0) return [];
-    const excluded = new Set(['id', 'x', 'y', 'source', 'sourceId', 'group', 'cluster', '__index']);
+    const excluded = new Set(['id', 'x', 'y', 'source', 'sourceId', 'group', 'cluster', '__index', '__restoreId']);
     const keys = Object.keys(activeScatterData[0] || {}).filter((key) => !excluded.has(key));
     return keys.filter((key) =>
       activeScatterData.some((point) => Number.isFinite(Number(point[key])))
@@ -1221,7 +1227,7 @@ const ScatterPage = () => {
         { label: 'UMAP2', value: 'UMAP2' },
       ];
     }
-    const excluded = new Set(['id', 'x', 'y', 'source', 'sourceId', 'group', 'cluster', '__index']);
+    const excluded = new Set(['id', 'x', 'y', 'source', 'sourceId', 'group', 'cluster', '__index', '__restoreId']);
     const keys = Object.keys(activeScatterData[0] || {}).filter((key) => !excluded.has(key));
     const numericKeys = keys.filter((key) =>
       activeScatterData.some((point) => Number.isFinite(Number(point[key])))
@@ -1244,6 +1250,7 @@ const ScatterPage = () => {
       'cluster',
       'group',
       '__index',
+      '__restoreId',
     ]);
     return Object.keys(activeScatterData[0] || {}).filter((key) => !excluded.has(key));
   }, [hasScatterData, activeScatterData]);
@@ -1972,92 +1979,124 @@ const ScatterPage = () => {
     return values;
   }, []);
 
-  // 根据自定义分组计算热图数据（必须在 handleViewHeatmap 之前定义）
-  const computeCustomGroupHeatmap = useCallback((points, customGroups, originalCols, scale = 'column') => {
-    if (!points || points.length === 0 || !customGroups || customGroups.length === 0) {
+  // 根据图例分组计算热图（按组取平均值）
+  const computeGroupedHeatmap = useCallback(({
+    points,
+    mode = 'source',
+    customGroups = [],
+    legendItems = [],
+    originalCols = [],
+    scale = 'column',
+  }) => {
+    if (!points || points.length === 0) {
       return null;
     }
 
-    // 防御性检查：确保 originalCols 是数组
+    const normalizeLabel = mode === 'cluster'
+      ? (point) => normalizeGroupValue(point?.group ?? point?.cluster)
+      : (point) => normalizeSourceValue(point?.source ?? point?.sourceId);
+
     const cols = Array.isArray(originalCols) ? originalCols : [];
-    if (cols.length === 0) {
+    const excludedCols = new Set(['id', 'x', 'y', 'cluster', 'group', 'source', 'sourceId', '__index', '__restoreId']);
+    let numericCols = cols.filter((col) => !excludedCols.has(col));
+    if (numericCols.length === 0) {
+      const keys = new Set();
+      points.forEach((point) => {
+        Object.keys(point || {}).forEach((key) => {
+          if (!excludedCols.has(key)) {
+            keys.add(key);
+          }
+        });
+      });
+      numericCols = Array.from(keys).filter((col) =>
+        points.some((point) => Number.isFinite(Number(point?.[col])))
+      );
+    }
+
+    if (numericCols.length === 0) {
       return null;
     }
 
-    // 获取数值列（排除非数值列）
-    const excludedCols = new Set(['id', 'x', 'y', 'cluster', 'group', 'source', 'sourceId', '__index']);
-    const numericCols = cols.filter(col => !excludedCols.has(col));
+    const pointEntries = points.map((point) => ({
+      point,
+      label: normalizeLabel(point),
+    }));
 
-    // 按自定义分组计算平均值
+    // 生成分组
+    const groups = [];
+    const hasCustom = Array.isArray(customGroups) && customGroups.length > 0;
+    if (hasCustom) {
+      const groupedLabels = new Set();
+      customGroups.forEach((group) => {
+        if (!group || !Array.isArray(group.sources)) return;
+        const labelSet = new Set(group.sources.map((label) => String(label)));
+        if (labelSet.size === 0) return;
+        const groupPoints = pointEntries
+          .filter((entry) => labelSet.has(entry.label))
+          .map((entry) => entry.point);
+        if (groupPoints.length === 0) return;
+        group.sources.forEach((label) => groupedLabels.add(String(label)));
+        groups.push({
+          name: group.name || '未命名组',
+          points: groupPoints,
+        });
+      });
+
+      const ungroupedPoints = pointEntries
+        .filter((entry) => !groupedLabels.has(entry.label))
+        .map((entry) => entry.point);
+      if (ungroupedPoints.length > 0) {
+        groups.push({ name: '未分组', points: ungroupedPoints });
+      }
+    } else {
+      const counts = new Map();
+      pointEntries.forEach(({ label }) => {
+        counts.set(label, (counts.get(label) || 0) + 1);
+      });
+      const baseOrder = Array.isArray(legendItems) ? legendItems.map((item) => String(item.label)) : [];
+      const orderedLabels = [
+        ...baseOrder.filter((label) => counts.has(label)),
+        ...Array.from(counts.keys()).filter((label) => !baseOrder.includes(label)),
+      ];
+
+      orderedLabels.forEach((label) => {
+        const groupPoints = pointEntries
+          .filter((entry) => entry.label === label)
+          .map((entry) => entry.point);
+        if (groupPoints.length === 0) return;
+        groups.push({
+          name: label,
+          points: groupPoints,
+        });
+      });
+    }
+
+    if (groups.length === 0) {
+      return null;
+    }
+
+    // 计算分组均值矩阵
     const groupResults = [];
-
-    customGroups.forEach((group) => {
-      // 防御性检查：确保 group 和 group.sources 存在
-      if (!group || !Array.isArray(group.sources)) return;
-
-      // 获取该组包含的所有点的 cluster/source 标签
-      const groupLabels = new Set(group.sources);
-
-      // 筛选属于该组的点
-      const groupPoints = points.filter(p => {
-        const pointLabel = String(p.cluster ?? p.group ?? p.source ?? p.sourceId ?? '');
-        return groupLabels.has(pointLabel);
-      });
-
-      if (groupPoints.length === 0) return;
-
-      // 计算每个数值列的平均值
+    groups.forEach((group) => {
       const rowValues = numericCols.map((col) => {
-        const values = groupPoints
-          .map(p => Number(p[col]))
-          .filter(v => !isNaN(v));
+        const values = group.points
+          .map((point) => Number(point?.[col]))
+          .filter((value) => Number.isFinite(value));
         if (values.length === 0) return 0;
-        return values.reduce((a, b) => a + b, 0) / values.length;
+        return values.reduce((sum, value) => sum + value, 0) / values.length;
       });
-
       groupResults.push({
         name: group.name || '未命名组',
         values: rowValues,
-        count: groupPoints.length,
+        count: group.points.length,
       });
     });
 
-    // 处理未分组的点
-    const groupedLabels = new Set();
-    customGroups.forEach((g) => {
-      if (g && Array.isArray(g.sources)) {
-        g.sources.forEach((s) => groupedLabels.add(s));
-      }
-    });
-    const ungroupedPoints = points.filter(p => {
-      const pointLabel = String(p.cluster ?? p.group ?? p.source ?? p.sourceId ?? '');
-      return !groupedLabels.has(pointLabel);
-    });
-
-    if (ungroupedPoints.length > 0) {
-      const rowValues = numericCols.map((col) => {
-        const values = ungroupedPoints
-          .map(p => Number(p[col]))
-          .filter(v => !isNaN(v));
-        if (values.length === 0) return 0;
-        return values.reduce((a, b) => a + b, 0) / values.length;
-      });
-
-      groupResults.push({
-        name: '未分组',
-        values: rowValues,
-        count: ungroupedPoints.length,
-      });
-    }
-
-    // 获取原始均值矩阵
-    const rawValues = groupResults.map(g => g.values);
-
-    // 进行标准化处理
+    const rawValues = groupResults.map((group) => group.values);
     const scaledValues = scaleMatrix(rawValues, scale);
 
     return {
-      rows: groupResults.map(g => g.name),
+      rows: groupResults.map((group) => group.name),
       cols: numericCols,
       values: scaledValues,
       groupInfo: groupResults,
@@ -2067,25 +2106,49 @@ const ScatterPage = () => {
 
   // 处理查看当前热图
   const handleViewHeatmap = () => {
-    if (!heatmapPayload?.heatmap?.values?.length) {
-      toast.error('暂无热图数据，请先进行聚类分析');
+    const basePoints = filteredScatterData.length > 0
+      ? filteredScatterData
+      : activeScatterData;
+    if (!basePoints?.length) {
+      toast.error('暂无可用于计算热图的数据');
       return;
     }
 
-    // 检查是否使用自定义分组（只要聚类筛选是自定义模式即可，不依赖颜色选择）
-    const isCustomMode = clusterLegendMode === 'custom' && customClusterGroups.length > 0;
+    const originalCols = heatmapPayload?.heatmap?.cols || [];
+    // 变量模式默认按来源分组
+    const heatmapMode = colorMode === 'cluster' ? 'cluster' : 'source';
+    const customGroups = heatmapMode === 'cluster'
+      ? (clusterLegendMode === 'custom' ? customClusterGroups : [])
+      : (sourceLegendMode === 'custom' ? customSourceGroups : []);
+    const legendItems = heatmapMode === 'cluster' ? clusterLegendItems : sourceLegendItems;
+    const computedHeatmap = computeGroupedHeatmap({
+      points: basePoints,
+      mode: heatmapMode,
+      customGroups,
+      legendItems,
+      originalCols,
+      scale: heatmapScale,
+    });
 
-    if (isCustomMode) {
-      // 根据自定义分组重新计算热图数据（使用选定的标准化方式）
-      const customHeatmap = computeCustomGroupHeatmap(
-        clusterData.length > 0 ? clusterData : scatterData,
-        customClusterGroups,
-        heatmapPayload.heatmap.cols,
-        heatmapScale // 传递标准化方式
-      );
-      setCustomHeatmapData(customHeatmap);
+    if (computedHeatmap) {
+      setCustomHeatmapData(computedHeatmap);
+      const modeLabel = heatmapMode === 'cluster' ? '聚类分组' : '来源分组';
+      const colorLabel = colorMode === 'column' ? '（颜色选择=变量，默认按来源分组）' : '';
+      setViewHeatmapMeta({
+        title: `${modeLabel}热图`,
+        description: `根据当前图例筛选重新计算的热图（按组取平均值，标准化方式：${heatmapScale === 'column' ? '按列' : heatmapScale === 'row' ? '按行' : '无'}）${colorLabel}`,
+      });
     } else {
+      // 兜底：仍允许查看后端返回的原始热图
+      if (!heatmapPayload?.heatmap?.values?.length) {
+        toast.error('热图计算失败：缺少可用数值列');
+        return;
+      }
       setCustomHeatmapData(null);
+      setViewHeatmapMeta({
+        title: '热图聚类结果',
+        description: '查看当前最新的聚类热图分析结果',
+      });
     }
 
     setIsViewHeatmapOpen(true);
@@ -2095,6 +2158,10 @@ const ScatterPage = () => {
   const handleCloseViewHeatmap = () => {
     setIsViewHeatmapOpen(false);
     setCustomHeatmapData(null);
+    setViewHeatmapMeta({
+      title: '热图聚类结果',
+      description: '查看当前最新的聚类热图分析结果',
+    });
   };
 
   const handleClusterConfirm = async () => {
@@ -2393,9 +2460,9 @@ const ScatterPage = () => {
                   </button>
                   <button
                     onClick={handleViewHeatmap}
-                    disabled={!heatmapPayload?.heatmap?.values?.length}
+                    disabled={!hasScatterData}
                     className={`inline-flex w-full items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition ${
-                      !heatmapPayload?.heatmap?.values?.length
+                      !hasScatterData
                         ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
                         : 'border border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100'
                     }`}
@@ -3811,31 +3878,31 @@ const ScatterPage = () => {
       <Dialog open={isViewHeatmapOpen} onOpenChange={setIsViewHeatmapOpen}>
         <DialogContent className="sm:max-w-6xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>
-              {customHeatmapData ? '自定义分组热图' : '热图聚类结果'}
-            </DialogTitle>
-            <DialogDescription>
-              {customHeatmapData
-                ? `根据自定义分组重新计算的热图（按组取平均值，标准化方式：${heatmapScale === 'column' ? '按列' : heatmapScale === 'row' ? '按行' : '无'}）`
-                : '查看当前最新的聚类热图分析结果'}
-            </DialogDescription>
+            <DialogTitle>{viewHeatmapMeta.title}</DialogTitle>
+            <DialogDescription>{viewHeatmapMeta.description}</DialogDescription>
           </DialogHeader>
 
-          {/* 自定义分组模式：显示标准化方式说明 */}
+          {/* 动态分组模式：显示标准化方式说明 */}
           {customHeatmapData && (
             <div className="flex items-center gap-3 rounded-xl border border-amber-200 bg-amber-50/50 p-3">
               <span className="text-sm font-medium text-slate-700">标准化方式：</span>
-              <span className="text-sm text-slate-600">按列标准化（每列减去均值，除以标准差）</span>
+              <span className="text-sm text-slate-600">
+                {heatmapScale === 'column'
+                  ? '按列标准化（每列减去均值，除以标准差）'
+                  : heatmapScale === 'row'
+                    ? '按行标准化（每行减去均值，除以标准差）'
+                    : '无标准化（保留原始均值）'}
+              </span>
             </div>
           )}
 
           {customHeatmapData ? (
-            // 自定义分组模式：使用简化版热图组件（无树形结构）
+            // 动态分组模式：使用简化版热图组件（无树形结构）
             <SimpleHeatmapView
               rows={customHeatmapData.rows}
               cols={customHeatmapData.cols}
               values={customHeatmapData.values}
-              title={`自定义分组热图（标准化：${heatmapScale === 'column' ? '按列' : heatmapScale === 'row' ? '按行' : '无'}）`}
+              title={`${viewHeatmapMeta.title}（标准化：${heatmapScale === 'column' ? '按列' : heatmapScale === 'row' ? '按行' : '无'}）`}
             />
           ) : heatmapPayload?.heatmap ? (
             // 默认模式：使用完整版热图组件（带树形结构）
