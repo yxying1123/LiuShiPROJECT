@@ -577,10 +577,12 @@ const ScatterPage = () => {
   const [isViewHeatmapOpen, setIsViewHeatmapOpen] = useState(false);
   // 按当前图例模式动态计算的热图数据
   const [customHeatmapData, setCustomHeatmapData] = useState(null);
+  const [customHeatmapType, setCustomHeatmapType] = useState(null); // grouped | roe | null
   const [viewHeatmapMeta, setViewHeatmapMeta] = useState({
     title: '热图聚类结果',
     description: '查看当前最新的聚类热图分析结果',
   });
+  const [isRoeGenerating, setIsRoeGenerating] = useState(false);
   // 热图标准化方式：'column' | 'row' | 'none'（与后端一致，默认为 column）
   const [heatmapScale, setHeatmapScale] = useState('column');
   const layoutReady = analysisAreaReady && scatterPanelReady;
@@ -2132,6 +2134,7 @@ const ScatterPage = () => {
 
     if (computedHeatmap) {
       setCustomHeatmapData(computedHeatmap);
+      setCustomHeatmapType('grouped');
       const modeLabel = heatmapMode === 'cluster' ? '聚类分组' : '来源分组';
       const colorLabel = colorMode === 'column' ? '（颜色选择=变量，默认按来源分组）' : '';
       setViewHeatmapMeta({
@@ -2145,6 +2148,7 @@ const ScatterPage = () => {
         return;
       }
       setCustomHeatmapData(null);
+      setCustomHeatmapType(null);
       setViewHeatmapMeta({
         title: '热图聚类结果',
         description: '查看当前最新的聚类热图分析结果',
@@ -2158,10 +2162,55 @@ const ScatterPage = () => {
   const handleCloseViewHeatmap = () => {
     setIsViewHeatmapOpen(false);
     setCustomHeatmapData(null);
+    setCustomHeatmapType(null);
     setViewHeatmapMeta({
       title: '热图聚类结果',
       description: '查看当前最新的聚类热图分析结果',
     });
+  };
+
+  // 生成 ROE 热图（基于聚类标签与来源标签）
+  const handleViewRoeHeatmap = async () => {
+    const basePoints = filteredScatterData.length > 0
+      ? filteredScatterData
+      : activeScatterData;
+    if (!basePoints?.length) {
+      toast.error('暂无可用于计算 ROE 热图的数据');
+      return;
+    }
+
+    const hasClusterLabel = basePoints.some((point) =>
+      point?.group !== undefined || point?.cluster !== undefined
+    );
+    if (!hasClusterLabel) {
+      toast.error('请先完成聚类分析后再生成 ROE 热图');
+      return;
+    }
+
+    setIsRoeGenerating(true);
+    try {
+      const roeResponse = await requestApi('/heatmap/roe/points', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ points: basePoints }),
+      });
+      const roeHeatmap = roeResponse?.heatmap;
+      if (!roeHeatmap?.values?.length) {
+        toast.error('ROE 热图生成失败：后端未返回有效数据');
+        return;
+      }
+      setCustomHeatmapData(roeHeatmap);
+      setCustomHeatmapType('roe');
+      setViewHeatmapMeta({
+        title: 'ROE热图',
+        description: '基于聚类与来源构建列联表，并展示 log2(Ro/E) 结果',
+      });
+      setIsViewHeatmapOpen(true);
+    } catch (err) {
+      toast.error(err?.message || 'ROE 热图生成失败');
+    } finally {
+      setIsRoeGenerating(false);
+    }
   };
 
   const handleClusterConfirm = async () => {
@@ -2346,7 +2395,7 @@ const ScatterPage = () => {
               <div className="rounded-xl border border-slate-200 bg-white/90 p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <h3 className="text-base font-semibold text-slate-800">分析配置</h3>
+                    <h3 className="text-base font-semibold text-slate-800">坐标轴选择</h3>
                   </div>
                   <button
                     type="button"
@@ -2358,7 +2407,6 @@ const ScatterPage = () => {
                 </div>
                 <div className="mt-4 space-y-4">
                   <div className="space-y-2">
-                    <p className="text-sm font-medium text-slate-700">坐标轴选择</p>
                     <div className="space-y-3">
                       <div className="space-y-2">
                         <label className="text-xs font-medium text-slate-600">X轴字段</label>
@@ -2372,14 +2420,20 @@ const ScatterPage = () => {
                               <ChevronDown className="h-4 w-4 text-slate-500" />
                             </button>
                           </PopoverTrigger>
-                          <PopoverContent className="w-72" align="start">
-                            <div className="space-y-2">
+                          <PopoverContent
+                            className="w-72 max-h-72 overflow-y-auto p-2"
+                            align="start"
+                            side="bottom"
+                            sideOffset={6}
+                            avoidCollisions={false}
+                          >
+                            <div className="space-y-1">
                               {axisFieldOptions.map((option) => {
                                 const checked = axisViewX === option.value;
                                 return (
                                   <label
                                     key={`axis-view-x-${option.value}`}
-                                    className="flex items-center gap-2 text-sm text-slate-700"
+                                    className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-slate-700"
                                   >
                                     <Checkbox
                                       checked={checked}
@@ -2410,14 +2464,20 @@ const ScatterPage = () => {
                               <ChevronDown className="h-4 w-4 text-slate-500" />
                             </button>
                           </PopoverTrigger>
-                          <PopoverContent className="w-72" align="start">
-                            <div className="space-y-2">
+                          <PopoverContent
+                            className="w-72 max-h-72 overflow-y-auto p-2"
+                            align="start"
+                            side="bottom"
+                            sideOffset={6}
+                            avoidCollisions={false}
+                          >
+                            <div className="space-y-1">
                               {axisFieldOptions.map((option) => {
                                 const checked = axisViewY === option.value;
                                 return (
                                   <label
                                     key={`axis-view-y-${option.value}`}
-                                    className="flex items-center gap-2 text-sm text-slate-700"
+                                    className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-slate-700"
                                   >
                                     <Checkbox
                                       checked={checked}
@@ -2474,6 +2534,23 @@ const ScatterPage = () => {
                       <rect x="14" y="14" width="7" height="7" rx="1" />
                     </svg>
                     查看热图
+                  </button>
+                  <button
+                    onClick={handleViewRoeHeatmap}
+                    disabled={!hasScatterData || isRoeGenerating}
+                    className={`inline-flex w-full items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition ${
+                      !hasScatterData || isRoeGenerating
+                        ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                        : 'border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100'
+                    }`}
+                  >
+                    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <rect x="3" y="3" width="7" height="7" rx="1" />
+                      <rect x="14" y="3" width="7" height="7" rx="1" />
+                      <rect x="3" y="14" width="7" height="7" rx="1" />
+                      <rect x="14" y="14" width="7" height="7" rx="1" />
+                    </svg>
+                    {isRoeGenerating ? '生成中...' : 'ROE热图'}
                   </button>
                   <button
                     onClick={() => setIsSaveOpen(true)}
@@ -3883,7 +3960,7 @@ const ScatterPage = () => {
           </DialogHeader>
 
           {/* 动态分组模式：显示标准化方式说明 */}
-          {customHeatmapData && (
+          {customHeatmapData && customHeatmapType === 'grouped' && (
             <div className="flex items-center gap-3 rounded-xl border border-amber-200 bg-amber-50/50 p-3">
               <span className="text-sm font-medium text-slate-700">标准化方式：</span>
               <span className="text-sm text-slate-600">
@@ -3902,7 +3979,11 @@ const ScatterPage = () => {
               rows={customHeatmapData.rows}
               cols={customHeatmapData.cols}
               values={customHeatmapData.values}
-              title={`${viewHeatmapMeta.title}（标准化：${heatmapScale === 'column' ? '按列' : heatmapScale === 'row' ? '按行' : '无'}）`}
+              title={
+                customHeatmapType === 'grouped'
+                  ? `${viewHeatmapMeta.title}（标准化：${heatmapScale === 'column' ? '按列' : heatmapScale === 'row' ? '按行' : '无'}）`
+                  : viewHeatmapMeta.title
+              }
             />
           ) : heatmapPayload?.heatmap ? (
             // 默认模式：使用完整版热图组件（带树形结构）

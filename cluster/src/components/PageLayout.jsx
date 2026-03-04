@@ -166,7 +166,12 @@ const PageLayout = ({
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:flex-nowrap">
                     {breadcrumb && <div className="min-w-0">{breadcrumb}</div>}
                     {actions && (
-                      <div className="flex items-center justify-start sm:justify-end shrink-0">
+                      <div
+                        className={cn(
+                          "flex items-center justify-start sm:justify-end shrink-0",
+                          !breadcrumb && "w-full"
+                        )}
+                      >
                         {actions}
                       </div>
                     )}
