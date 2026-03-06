@@ -58,6 +58,13 @@ jobs:
             Remove-Item -Recurse -Force cluster-End/static
           }
           Copy-Item -Recurse cluster/build cluster-End/static
+          # 复制图标文件到 static 目录
+          if (Test-Path cluster/public/细胞分析.png) {
+            Copy-Item cluster/public/细胞分析.png cluster-End/static/细胞分析.png
+          }
+          if (Test-Path cluster/public/icon.ico) {
+            Copy-Item cluster/public/icon.ico cluster-End/static/icon.ico
+          }
 
       - name: Build executable
         working-directory: cluster-End
@@ -113,6 +120,13 @@ jobs:
         run: |
           rm -rf cluster-End/static
           cp -r cluster/build cluster-End/static
+          # 复制图标文件到 static 目录
+          if [ -f cluster/public/细胞分析.png ]; then
+            cp cluster/public/细胞分析.png cluster-End/static/细胞分析.png
+          fi
+          if [ -f cluster/public/icon.ico ]; then
+            cp cluster/public/icon.ico cluster-End/static/icon.ico
+          fi
 
       - name: Build executable
         working-directory: cluster-End
