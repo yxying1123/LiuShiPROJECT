@@ -110,6 +110,19 @@ def build_executable():
     if os.path.exists(build_dir):
         shutil.rmtree(build_dir)
 
+    # 获取图标路径（支持 .png 和 .ico）
+    icon_source = os.path.join(backend_dir, "..", "cluster", "public", "细胞分析.png")
+    icon_source = os.path.abspath(icon_source)
+    
+    # 如果存在 .ico 文件则直接使用，否则使用 .png
+    if os.path.exists(os.path.join(backend_dir, "..", "cluster", "public", "icon.ico")):
+        icon_path = os.path.join(backend_dir, "..", "cluster", "public", "icon.ico")
+    elif os.path.exists(icon_source):
+        icon_path = icon_source
+    else:
+        icon_path = None
+        print("Warning: 图标文件未找到，将使用默认图标")
+
     # PyInstaller command
     cmd = [
         sys.executable,
@@ -120,6 +133,8 @@ def build_executable():
         "--distpath", dist_dir,
         "--workpath", os.path.join(backend_dir, "build"),
         "--specpath", backend_dir,
+        # Add icon if exists
+        *("--icon", icon_path) if icon_path else (),
         # Add data files
         "--add-data", f"static{os.pathsep}static",
         "--add-data", f"model{os.pathsep}model",
