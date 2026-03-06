@@ -13,12 +13,22 @@ import platform
 
 def run_command(cmd, cwd=None, env=None):
     """Run a command and print output."""
-    print(f"Running: {' '.join(cmd)}")
+    # Safe print for Windows encoding issues
+    try:
+        print(f"Running: {' '.join(cmd)}")
+    except UnicodeEncodeError:
+        print("Running: [command with non-ASCII characters]")
     result = subprocess.run(cmd, cwd=cwd, env=env, capture_output=True, text=True)
     if result.stdout:
-        print(result.stdout)
+        try:
+            print(result.stdout)
+        except UnicodeEncodeError:
+            print(result.stdout.encode('utf-8', errors='replace').decode('utf-8'))
     if result.stderr:
-        print(result.stderr, file=sys.stderr)
+        try:
+            print(result.stderr, file=sys.stderr)
+        except UnicodeEncodeError:
+            print(result.stderr.encode('utf-8', errors='replace').decode('utf-8'), file=sys.stderr)
     if result.returncode != 0:
         print(f"Command failed with return code {result.returncode}")
         sys.exit(1)
