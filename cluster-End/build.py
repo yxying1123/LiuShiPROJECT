@@ -133,9 +133,14 @@ def build_executable():
         "--distpath", dist_dir,
         "--workpath", os.path.join(backend_dir, "build"),
         "--specpath", backend_dir,
-        # Add icon if exists
-        *("--icon", icon_path) if icon_path else (),
-        # Add data files
+    ]
+    
+    # Add icon if exists
+    if icon_path:
+        cmd.extend(["--icon", icon_path])
+    
+    # Add data files
+    cmd.extend([
         "--add-data", f"static{os.pathsep}static",
         "--add-data", f"model{os.pathsep}model",
         "--add-data", f"service{os.pathsep}service",
@@ -191,7 +196,7 @@ def build_executable():
         "--collect-all", "flowkit",
         # Main entry point
         os.path.join(backend_dir, "launch.py"),
-    ]
+    ])
 
     # Windows-specific options
     if platform.system().lower() == "windows":
