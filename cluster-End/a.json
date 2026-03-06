@@ -32,6 +32,14 @@
       "headers": {
         "Authorization": "053b73f3d625407caf12b5c9264a281c.nqyAsgPia7UYZBlV"
       }
+    },
+    "playwright": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@playwright/mcp@latest"
+      ]
     }
   }
 }

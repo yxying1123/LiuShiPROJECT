@@ -1,0 +1,45 @@
+{
+  "version": 1,
+  "skills": {
+    "ambiguity-detector": {
+      "source": "Chuanzhenqi/SoftwareEngineeringPracticeCourse",
+      "sourceType": "github",
+      "computedHash": "858914789fbe3aeb2be720b8f80e6fd29c8749680e8b6df55917b94581c9fce5"
+    },
+    "explain-code": {
+      "source": "Chuanzhenqi/SoftwareEngineeringPracticeCourse",
+      "sourceType": "github",
+      "computedHash": "489e04bc50eac10eedea814230f2823055f471b634734b34cecf4c82c428f303"
+    },
+    "se-architecture-doc-assistant": {
+      "source": "Chuanzhenqi/SoftwareEngineeringPracticeCourse",
+      "sourceType": "github",
+      "computedHash": "1b50f21002536c4cda63e92cb299b050a601a063c9b375fa533f89fc2a8efe54"
+    },
+    "se-course-doc-orchestrator": {
+      "source": "Chuanzhenqi/SoftwareEngineeringPracticeCourse",
+      "sourceType": "github",
+      "computedHash": "9bda78887a65b736d019622acf1d27ce67797c7f1b67479f3a98a86663b2e24d"
+    },
+    "se-implementation-doc-assistant": {
+      "source": "Chuanzhenqi/SoftwareEngineeringPracticeCourse",
+      "sourceType": "github",
+      "computedHash": "0867130753df94f8d525114eb5b3ebd7eb1a21d9f534eab913907804807f5855"
+    },
+    "se-project-management-doc-assistant": {
+      "source": "Chuanzhenqi/SoftwareEngineeringPracticeCourse",
+      "sourceType": "github",
+      "computedHash": "c0adcec0c8d9557d6ffd720ce32ca4cd72eafbcbf5e849532702a1284a7a2d27"
+    },
+    "se-requirements-doc-assistant": {
+      "source": "Chuanzhenqi/SoftwareEngineeringPracticeCourse",
+      "sourceType": "github",
+      "computedHash": "5c3c0c5871f21d79f03b43fee146d34c3201a9bc3ecc12599d910e945387793f"
+    },
+    "se-testing-deployment-doc-assistant": {
+      "source": "Chuanzhenqi/SoftwareEngineeringPracticeCourse",
+      "sourceType": "github",
+      "computedHash": "31970d2cd2c92768682c1a9453ea8db4811cdece1b8c2572412ad93166515caa"
+    }
+  }
+}

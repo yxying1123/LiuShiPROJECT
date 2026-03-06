@@ -19,6 +19,7 @@ from model.ResponseModel import ResponseModel
 import service.reduction as reduction
 import pandas
 import flowkit as fk
+from sklearn.preprocessing import StandardScaler
 from fastapi.middleware.cors import CORSMiddleware
 try:
     from scipy.cluster.hierarchy import linkage, dendrogram
@@ -112,6 +113,26 @@ def _scale_matrix(df: pandas.DataFrame, scale: str) -> pandas.DataFrame:
     if scale in ("none", "no", "false"):
         return df
     raise ValueError(f"Unsupported scale: {scale}")
+
+
+def _compute_roe_matrix(count_df: pandas.DataFrame) -> tuple[pandas.DataFrame, pandas.DataFrame]:
+    total_cells = float(count_df.to_numpy().sum())
+    if total_cells <= 0:
+        raise ValueError("ROE 计算失败：计数矩阵为空")
+
+    expected_prop = count_df.sum(axis=0) / total_cells
+    row_totals = count_df.sum(axis=1).replace(0, np.nan)
+    observed_prop = count_df.div(row_totals, axis=0)
+
+    safe_expected = expected_prop.replace(0, np.nan)
+    roe_df = observed_prop.div(safe_expected, axis=1)
+    roe_df = roe_df.replace([np.inf, -np.inf], np.nan)
+
+    # 与 R 版 log2(roe_matrix) 一致：无效值记为 0 便于前端绘图
+    log2_roe_df = np.log2(roe_df.where(roe_df > 0))
+    log2_roe_df = log2_roe_df.replace([np.inf, -np.inf], np.nan).fillna(0.0)
+
+    return roe_df.fillna(0.0), log2_roe_df
 
 
 def _flat_tree(labels: List[str]) -> dict:
@@ -508,7 +529,13 @@ async def select(payload: dict = Body(...)):
     if df_main.empty or df_main.shape[1] == 0:
         raise ValueError("降维列均为非数值或空值")
 
-    umap_data = reduction.run_umap(df_main, UMAP_PARAMS)
+    # 【新增】对高维特征进行 Z-Score 标准化，消除量纲差异
+    scaler = StandardScaler()
+    scaled_values = scaler.fit_transform(df_main)
+    df_scaled = pandas.DataFrame(scaled_values, columns=df_main.columns, index=df_main.index)
+
+    # 用标准化后的数据跑 UMAP
+    umap_data = reduction.run_umap(df_scaled, UMAP_PARAMS)
     df_all = df_all.drop(columns=["xColumn", "yColumn"], errors="ignore")
     result = pandas.concat([umap_data, df_all.reset_index(drop=True)], axis=1)
 
@@ -618,6 +645,61 @@ async def heatmap_cluster_tree_points(payload: dict = Body(...)):
             "rowTree": row_tree,
             "colTree": col_tree,
             "pointGroups": point_groups,
+        },
+    )
+
+
+@app.post("/heatmap/roe/points")
+async def heatmap_roe_points(payload: dict = Body(...)):
+    points = payload.get("points") or []
+    if not points:
+        raise ValueError("points 为必填字段")
+
+    df = pandas.DataFrame(points)
+    if df.empty:
+        raise ValueError("points 为空，无法生成 ROE 热图")
+
+    cluster_candidates = payload.get("clusterFields") or ["group", "cluster"]
+    source_candidates = payload.get("sourceFields") or ["source", "sourceId", "sample"]
+
+    cluster_field = next((field for field in cluster_candidates if field in df.columns), None)
+    source_field = next((field for field in source_candidates if field in df.columns), None)
+    if not cluster_field:
+        raise ValueError("缺少聚类字段，需包含 group 或 cluster")
+    if not source_field:
+        raise ValueError("缺少来源字段，需包含 source/sourceId/sample")
+
+    cluster_values = df[cluster_field].fillna("未分组").astype(str)
+    source_values = df[source_field].fillna("未知来源").astype(str)
+    count_df = pandas.crosstab(cluster_values, source_values)
+    if count_df.empty:
+        raise ValueError("无法从当前数据构建 ROE 计数矩阵")
+
+    row_order = payload.get("rowOrder") or []
+    col_order = payload.get("colOrder") or []
+    if row_order:
+        ordered_rows = [str(item) for item in row_order if str(item) in count_df.index]
+        remaining_rows = [item for item in count_df.index if item not in ordered_rows]
+        count_df = count_df.reindex(index=ordered_rows + remaining_rows)
+    if col_order:
+        ordered_cols = [str(item) for item in col_order if str(item) in count_df.columns]
+        remaining_cols = [item for item in count_df.columns if item not in ordered_cols]
+        count_df = count_df.reindex(columns=ordered_cols + remaining_cols)
+
+    roe_df, log2_roe_df = _compute_roe_matrix(count_df)
+    roe_df = roe_df.applymap(lambda x: float(f"{x:.4g}"))
+    log2_roe_df = log2_roe_df.round(4)
+
+    return ResponseModel(
+        code=200,
+        data={
+            "heatmap": {
+                "rows": [str(label) for label in log2_roe_df.index],
+                "cols": [str(label) for label in log2_roe_df.columns],
+                "values": log2_roe_df.values.tolist(),
+            },
+            "roeValues": roe_df.values.tolist(),
+            "countMatrix": count_df.values.tolist(),
         },
     )
 

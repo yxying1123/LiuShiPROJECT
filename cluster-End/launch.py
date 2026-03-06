@@ -60,7 +60,7 @@ app.add_middleware(
 from main import (
     list_files, upload_files, delete_file, download_file,
     files_metadata, files_metadata_all, upload_file, upload_xy,
-    upload_flow_merge, select, cluster, heatmap_cluster_tree_points
+    upload_flow_merge, select, cluster, heatmap_cluster_tree_points, heatmap_roe_points
 )
 
 # Mount static files (frontend) - BEFORE registering routes
@@ -84,6 +84,7 @@ app.post("/upload/flow/merge")(upload_flow_merge)
 app.post("/select")(select)
 app.post("/cluster")(cluster)
 app.post("/heatmap/cluster-tree/points")(heatmap_cluster_tree_points)
+app.post("/heatmap/roe/points")(heatmap_roe_points)
 
 # Copy exception handler from main
 from main import http_exception_handler
