@@ -39,7 +39,7 @@ const DataIntegrationModal = ({
                 <h3 className="text-xl font-semibold bg-gradient-to-r from-amber-600 to-rose-600 bg-clip-text text-transparent">
                   FCS文件导入
                 </h3>
-                <p className="text-sm text-slate-500 mt-1">上传 1 个 CSV 补偿矩阵与 1 个 FCS 文件</p>
+                <p className="text-sm text-slate-500 mt-1">上传 1 个 CSV 补偿矩阵与 多 个 FCS 文件</p>
               </div>
               <button
                 onClick={onClose}

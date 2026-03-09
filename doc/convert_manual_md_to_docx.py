@@ -36,7 +36,10 @@ def clear_doc_content(doc: Document):
 
 
 def add_heading(doc, text, level):
-    heading = doc.add_heading(level=level)
+    try:
+        heading = doc.add_heading(level=level)
+    except KeyError:
+        heading = doc.add_paragraph()
     run = heading.add_run(text)
     size_map = {1: 18, 2: 16, 3: 14, 4: 12}
     set_run_font(run, font_name="SimHei", size=size_map.get(level, 12), bold=True)

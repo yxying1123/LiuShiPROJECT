@@ -141,7 +141,7 @@ const PageLayout = ({
                       <BarChart3 className="h-6 w-6 text-white" />
                     </div>
                     <div className="hidden sm:block">
-                      <h1 className="text-lg font-semibold text-white leading-tight">数据可视化分析系统</h1>
+                      <h1 className="text-lg font-semibold text-white leading-tight">流式高维透视助手</h1>
                     </div>
                   </div>
                 </div>

@@ -41,6 +41,85 @@ const PREVIEW_IMAGE_SIZE = { width: 360, height: 240 };
 const MIN_SCATTER_WIDTH = 520;
 const MIN_SCATTER_HEIGHT = 420;
 const SCATTER_RESIZE_EDGE = 16;
+const LEGEND_PREFS_STORAGE_KEY = 'scatterLegendPrefs';
+
+const LEGEND_PREFS_DEFAULT = {
+  sourceLegendMode: 'custom',
+  clusterLegendMode: 'custom',
+  customSourceGroups: [],
+  customClusterGroups: [],
+};
+
+const readLegendPrefs = () => {
+  if (typeof window === 'undefined') {
+    return LEGEND_PREFS_DEFAULT;
+  }
+  try {
+    const raw = localStorage.getItem(LEGEND_PREFS_STORAGE_KEY);
+    if (!raw) return LEGEND_PREFS_DEFAULT;
+    const parsed = JSON.parse(raw);
+    const sourceLegendMode =
+      parsed?.sourceLegendMode === 'default' || parsed?.sourceLegendMode === 'custom'
+        ? parsed.sourceLegendMode
+        : LEGEND_PREFS_DEFAULT.sourceLegendMode;
+    const clusterLegendMode =
+      parsed?.clusterLegendMode === 'default' || parsed?.clusterLegendMode === 'custom'
+        ? parsed.clusterLegendMode
+        : LEGEND_PREFS_DEFAULT.clusterLegendMode;
+    return {
+      sourceLegendMode,
+      clusterLegendMode,
+      customSourceGroups: Array.isArray(parsed?.customSourceGroups)
+        ? parsed.customSourceGroups
+        : LEGEND_PREFS_DEFAULT.customSourceGroups,
+      customClusterGroups: Array.isArray(parsed?.customClusterGroups)
+        ? parsed.customClusterGroups
+        : LEGEND_PREFS_DEFAULT.customClusterGroups,
+    };
+  } catch {
+    return LEGEND_PREFS_DEFAULT;
+  }
+};
+
+const areStringArraysEqual = (left = [], right = []) => {
+  if (left === right) return true;
+  if (left.length !== right.length) return false;
+  return left.every((item, index) => item === right[index]);
+};
+
+const areCustomGroupsEqual = (left = [], right = []) => {
+  if (left === right) return true;
+  if (left.length !== right.length) return false;
+  return left.every((group, index) => {
+    const target = right[index];
+    if (!target) return false;
+    return (
+      group?.id === target.id &&
+      group?.name === target.name &&
+      group?.color === target.color &&
+      areStringArraysEqual(group?.sources || [], target?.sources || [])
+    );
+  });
+};
+
+const sanitizeCustomGroups = (groups = [], validLabels = []) => {
+  const validSet = new Set(validLabels);
+  const used = new Set();
+  return groups.reduce((result, group) => {
+    if (!group || !Array.isArray(group.sources)) return result;
+    const nextSources = group.sources.filter((label) => {
+      if (!validSet.has(label) || used.has(label)) return false;
+      used.add(label);
+      return true;
+    });
+    if (nextSources.length === 0) return result;
+    result.push({
+      ...group,
+      sources: nextSources,
+    });
+    return result;
+  }, []);
+};
 
 // 格式化表格数值
 const formatTableValue = (value) => {
@@ -515,11 +594,12 @@ const ScatterPage = () => {
   const [lastReductionColumns, setLastReductionColumns] = useState([]);
   const [isSourceLegendOpen, setIsSourceLegendOpen] = useState(true);
   const [isClusterLegendOpen, setIsClusterLegendOpen] = useState(true);
+  const initialLegendPrefs = useMemo(() => readLegendPrefs(), []);
   // 自定义分组状态
-  const [sourceLegendMode, setSourceLegendMode] = useState('custom');
-  const [clusterLegendMode, setClusterLegendMode] = useState('custom');
-  const [customSourceGroups, setCustomSourceGroups] = useState([]);
-  const [customClusterGroups, setCustomClusterGroups] = useState([]);
+  const [sourceLegendMode, setSourceLegendMode] = useState(initialLegendPrefs.sourceLegendMode);
+  const [clusterLegendMode, setClusterLegendMode] = useState(initialLegendPrefs.clusterLegendMode);
+  const [customSourceGroups, setCustomSourceGroups] = useState(initialLegendPrefs.customSourceGroups);
+  const [customClusterGroups, setCustomClusterGroups] = useState(initialLegendPrefs.customClusterGroups);
   const [isFlowOpen, setIsFlowOpen] = useState(true);
   const [colorMode, setColorMode] = useState('source');
   const [selectedClusters, setSelectedClusters] = useState([]);
@@ -585,6 +665,7 @@ const ScatterPage = () => {
   const [isRoeGenerating, setIsRoeGenerating] = useState(false);
   // 热图标准化方式：'column' | 'row' | 'none'（与后端一致，默认为 column）
   const [heatmapScale, setHeatmapScale] = useState('column');
+  const lastAnalysisResetTokenRef = useRef(analysisResetToken);
   const layoutReady = analysisAreaReady && scatterPanelReady;
   const selectedSources = scatterSelectedSources;
   const setSelectedSources = setScatterSelectedSources;
@@ -874,8 +955,14 @@ const ScatterPage = () => {
   }, [analysisSource, analysisSourcePoints, uploadedFiles]);
 
   useEffect(() => {
-    setSelectedSources(sourceOptions);
-  }, [sourceOptions]);
+    setSelectedSources((prev) => {
+      const current = Array.isArray(prev) ? prev : [];
+      if (sourceOptions.length === 0) return [];
+      if (current.length === 0) return sourceOptions;
+      const next = current.filter((item) => sourceOptions.includes(item));
+      return next.length > 0 ? next : sourceOptions;
+    });
+  }, [setSelectedSources, sourceOptions]);
 
   const toggleInitialConfigFile = useCallback((name, checked) => {
     setInitialConfigSelectedFiles((prev) => {
@@ -924,7 +1011,8 @@ const ScatterPage = () => {
   ]);
 
   useEffect(() => {
-    if (analysisResetToken === 0) return;
+    if (analysisResetToken === lastAnalysisResetTokenRef.current) return;
+    lastAnalysisResetTokenRef.current = analysisResetToken;
     setSelectedSources([]);
     setSelectedColumns([]);
     setRowLimitInput('');
@@ -963,6 +1051,23 @@ const ScatterPage = () => {
     setAnalysisSource,
     setAnalysisSourceResultId,
   ]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      localStorage.setItem(
+        LEGEND_PREFS_STORAGE_KEY,
+        JSON.stringify({
+          sourceLegendMode,
+          clusterLegendMode,
+          customSourceGroups,
+          customClusterGroups,
+        })
+      );
+    } catch {
+      // 忽略存储异常
+    }
+  }, [sourceLegendMode, clusterLegendMode, customSourceGroups, customClusterGroups]);
 
   useLayoutEffect(() => {
     if (!analysisAreaNode) return undefined;
@@ -1185,6 +1290,10 @@ const ScatterPage = () => {
       color: getScatterColor(index, total),
     }));
   }, [activeScatterData]);
+  const sourceLegendLabels = useMemo(
+    () => sourceLegendItems.map((item) => item.label),
+    [sourceLegendItems]
+  );
 
   const clusterLegendItems = useMemo(() => {
     if (!hasClusterData) return [];
@@ -1212,6 +1321,10 @@ const ScatterPage = () => {
       color: getScatterColor(index, total),
     }));
   }, [activeScatterData, hasClusterData]);
+  const clusterLegendLabels = useMemo(
+    () => clusterLegendItems.map((item) => item.label),
+    [clusterLegendItems]
+  );
 
   const colorFieldOptions = useMemo(() => {
     if (!hasScatterData || activeScatterData.length === 0) return [];
@@ -1278,8 +1391,34 @@ const ScatterPage = () => {
       setSelectedClusters([]);
       return;
     }
-    setSelectedClusters(clusterLegendItems.map((item) => item.label));
-  }, [hasClusterData, clusterLegendItems]);
+    setSelectedClusters((prev) => {
+      const current = Array.isArray(prev) ? prev : [];
+      if (clusterLegendLabels.length === 0) return [];
+      if (current.length === 0) return clusterLegendLabels;
+      const next = current.filter((item) => clusterLegendLabels.includes(item));
+      return next.length > 0 ? next : clusterLegendLabels;
+    });
+  }, [clusterLegendLabels, hasClusterData]);
+
+  useEffect(() => {
+    const nextGroups = sanitizeCustomGroups(customSourceGroups, sourceLegendLabels);
+    if (!areCustomGroupsEqual(customSourceGroups, nextGroups)) {
+      setCustomSourceGroups(nextGroups);
+    }
+  }, [customSourceGroups, sourceLegendLabels]);
+
+  useEffect(() => {
+    if (!hasClusterData) {
+      if (customClusterGroups.length > 0) {
+        setCustomClusterGroups([]);
+      }
+      return;
+    }
+    const nextGroups = sanitizeCustomGroups(customClusterGroups, clusterLegendLabels);
+    if (!areCustomGroupsEqual(customClusterGroups, nextGroups)) {
+      setCustomClusterGroups(nextGroups);
+    }
+  }, [clusterLegendLabels, customClusterGroups, hasClusterData]);
 
   useEffect(() => {
     if (!hasScatterData) {
@@ -2106,6 +2245,127 @@ const ScatterPage = () => {
     };
   }, [scaleMatrix]);
 
+  const computeRoeHeatmap = useCallback(({
+    points,
+    rowCustomGroups = [],
+    colCustomGroups = [],
+    rowLegendItems = [],
+    colLegendItems = [],
+  }) => {
+    if (!points || points.length === 0) {
+      return null;
+    }
+
+    const buildGroupResolver = (customGroups) => {
+      const labelToGroupName = new Map();
+      (customGroups || []).forEach((group) => {
+        if (!group || !Array.isArray(group.sources)) return;
+        group.sources.forEach((label) => {
+          labelToGroupName.set(String(label), group.name || '未命名组');
+        });
+      });
+      return (label) => labelToGroupName.get(String(label)) || String(label);
+    };
+
+    const resolveRowGroup = buildGroupResolver(rowCustomGroups);
+    const resolveColGroup = buildGroupResolver(colCustomGroups);
+
+    const pointEntries = points.map((point) => {
+      const baseRowLabel = normalizeGroupValue(point?.group ?? point?.cluster);
+      const baseColLabel = normalizeSourceValue(point?.source ?? point?.sourceId);
+      return {
+        rowLabel: resolveRowGroup(baseRowLabel),
+        colLabel: resolveColGroup(baseColLabel),
+        baseRowLabel,
+        baseColLabel,
+      };
+    });
+
+    const getOrderedLabels = (entries, key, legendItems, customGroups, rawKey) => {
+      const counts = new Map();
+      entries.forEach((entry) => {
+        const label = entry[key];
+        counts.set(label, (counts.get(label) || 0) + 1);
+      });
+
+      const ordered = [];
+      const used = new Set();
+      if (Array.isArray(customGroups) && customGroups.length > 0) {
+        customGroups.forEach((group) => {
+          const name = group?.name || '未命名组';
+          if (counts.has(name) && !used.has(name)) {
+            ordered.push(name);
+            used.add(name);
+          }
+        });
+      }
+
+      const baseOrder = Array.isArray(legendItems) ? legendItems.map((item) => String(item.label)) : [];
+      baseOrder.forEach((rawLabel) => {
+        const mappedLabel = key === rawKey ? rawLabel : rawLabel;
+        const label = key === 'rowLabel' ? resolveRowGroup(mappedLabel) : resolveColGroup(mappedLabel);
+        if (counts.has(label) && !used.has(label)) {
+          ordered.push(label);
+          used.add(label);
+        }
+      });
+
+      Array.from(counts.keys()).forEach((label) => {
+        if (!used.has(label)) {
+          ordered.push(label);
+          used.add(label);
+        }
+      });
+      return ordered;
+    };
+
+    const rowLabels = getOrderedLabels(pointEntries, 'rowLabel', rowLegendItems, rowCustomGroups, 'baseRowLabel');
+    const colLabels = getOrderedLabels(pointEntries, 'colLabel', colLegendItems, colCustomGroups, 'baseColLabel');
+
+    if (rowLabels.length === 0 || colLabels.length === 0) {
+      return null;
+    }
+
+    const totalCells = pointEntries.length;
+    if (totalCells <= 0) {
+      return null;
+    }
+
+    const countMatrix = new Map();
+    const rowTotals = new Map();
+    const colTotals = new Map();
+    pointEntries.forEach((entry) => {
+      rowTotals.set(entry.rowLabel, (rowTotals.get(entry.rowLabel) || 0) + 1);
+      colTotals.set(entry.colLabel, (colTotals.get(entry.colLabel) || 0) + 1);
+      const cellKey = `${entry.rowLabel}__@@__${entry.colLabel}`;
+      countMatrix.set(cellKey, (countMatrix.get(cellKey) || 0) + 1);
+    });
+
+    const values = rowLabels.map((rowLabel) => {
+      const rowTotal = rowTotals.get(rowLabel) || 0;
+      return colLabels.map((colLabel) => {
+        const observed = countMatrix.get(`${rowLabel}__@@__${colLabel}`) || 0;
+        const expected = (rowTotal * (colTotals.get(colLabel) || 0)) / totalCells;
+        if (rowTotal <= 0 || expected <= 0 || observed <= 0) {
+          return 0;
+        }
+        const observedProp = observed / rowTotal;
+        const expectedProp = (colTotals.get(colLabel) || 0) / totalCells;
+        const roe = observedProp / expectedProp;
+        if (!Number.isFinite(roe) || roe <= 0) {
+          return 0;
+        }
+        return Number(Math.log2(roe).toFixed(4));
+      });
+    });
+
+    return {
+      rows: rowLabels,
+      cols: colLabels,
+      values,
+    };
+  }, [normalizeGroupValue, normalizeSourceValue]);
+
   // 处理查看当前热图
   const handleViewHeatmap = () => {
     const basePoints = filteredScatterData.length > 0
@@ -2189,21 +2449,28 @@ const ScatterPage = () => {
 
     setIsRoeGenerating(true);
     try {
-      const roeResponse = await requestApi('/heatmap/roe/points', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ points: basePoints }),
+      const applyCustomClusterGroups =
+        colorMode === 'cluster' && clusterLegendMode === 'custom' ? customClusterGroups : [];
+      const applyCustomSourceGroups =
+        colorMode !== 'cluster' && sourceLegendMode === 'custom' ? customSourceGroups : [];
+      const roeHeatmap = computeRoeHeatmap({
+        points: basePoints,
+        rowCustomGroups: applyCustomClusterGroups,
+        colCustomGroups: applyCustomSourceGroups,
+        rowLegendItems: clusterLegendItems,
+        colLegendItems: sourceLegendItems,
       });
-      const roeHeatmap = roeResponse?.heatmap;
       if (!roeHeatmap?.values?.length) {
-        toast.error('ROE 热图生成失败：后端未返回有效数据');
+        toast.error('ROE 热图生成失败：无法从当前筛选结果构建矩阵');
         return;
       }
       setCustomHeatmapData(roeHeatmap);
       setCustomHeatmapType('roe');
+      const rowLabel = applyCustomClusterGroups.length > 0 ? '自定义聚类组' : '聚类';
+      const colLabel = applyCustomSourceGroups.length > 0 ? '自定义来源组' : '来源';
       setViewHeatmapMeta({
-        title: 'ROE热图',
-        description: '基于聚类与来源构建列联表，并展示 log2(Ro/E) 结果',
+        title: '细胞比例热图',
+        description: `基于当前图例筛选构建 ${rowLabel} × ${colLabel} 列联表，并展示 log2(Ro/E) 结果`,
       });
       setIsViewHeatmapOpen(true);
     } catch (err) {
@@ -2533,7 +2800,7 @@ const ScatterPage = () => {
                       <rect x="3" y="14" width="7" height="7" rx="1" />
                       <rect x="14" y="14" width="7" height="7" rx="1" />
                     </svg>
-                    查看热图
+                    表达量热图
                   </button>
                   <button
                     onClick={handleViewRoeHeatmap}
@@ -2550,7 +2817,7 @@ const ScatterPage = () => {
                       <rect x="3" y="14" width="7" height="7" rx="1" />
                       <rect x="14" y="14" width="7" height="7" rx="1" />
                     </svg>
-                    {isRoeGenerating ? '生成中...' : 'ROE热图'}
+                    {isRoeGenerating ? '生成中...' : '细胞比例热图'}
                   </button>
                   <button
                     onClick={() => setIsSaveOpen(true)}
@@ -2562,7 +2829,7 @@ const ScatterPage = () => {
                     }`}
                   >
                     <Save className="h-4 w-4" />
-                    保存当前散点图
+                    保存散点图
                   </button>
                 </div>
               </div>
