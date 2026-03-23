@@ -6,6 +6,7 @@ import {
   ChevronDown,
   ChevronUp,
   Download,
+  Plus,
   Save,
   X,
 } from 'lucide-react';
@@ -614,6 +615,7 @@ const ScatterPage = () => {
   const [initialConfigColumns, setInitialConfigColumns] = useState([]);
   const [initialConfigAxisX, setInitialConfigAxisX] = useState('');
   const [initialConfigAxisY, setInitialConfigAxisY] = useState('');
+  const [initialConfigFilters, setInitialConfigFilters] = useState([]);
   const initialConfigInitRef = useRef(false);
   const initialConfigSelectionRef = useRef(false);
   const [previewItems, setPreviewItems] = useState([]);
@@ -1822,6 +1824,28 @@ const ScatterPage = () => {
     });
   };
 
+  // 筛选条件相关函数
+  const handleAddFilter = () => {
+    setInitialConfigFilters((prev) => [
+      ...prev,
+      { id: Date.now(), column: '', operator: '>', value: '' },
+    ]);
+  };
+
+  const handleRemoveFilter = (id) => {
+    setInitialConfigFilters((prev) => prev.filter((f) => f.id !== id));
+  };
+
+  const handleFilterChange = (id, field, value) => {
+    setInitialConfigFilters((prev) =>
+      prev.map((f) => (f.id === id ? { ...f, [field]: value } : f))
+    );
+  };
+
+  const handleClearFilters = () => {
+    setInitialConfigFilters([]);
+  };
+
   const handleToggleCluster = (label, checked) => {
     setSelectedClusters((prev) => {
       if (checked) {
@@ -1921,6 +1945,7 @@ const ScatterPage = () => {
     const sourcePoints = override.sourcePoints ?? analysisSourcePoints;
     const sourceLabel = override.sourceLabel ?? analysisSourceLabel;
     const fileNames = override.fileNames;
+    const filters = override.filters ?? [];
     if (mode === 'reduction' && columns.length === 0) return false;
     if (mode === '2d' && (!axisX || !axisY)) return false;
     if (!sources || sources.length === 0) return false;
@@ -1941,6 +1966,7 @@ const ScatterPage = () => {
             sources,
             limitOverride: nextLimit,
             fileNames,
+            filters,
           });
         } else {
           success = await fetchScatterByFilters({
@@ -1948,6 +1974,7 @@ const ScatterPage = () => {
             sources,
             limitOverride: nextLimit,
             fileNames,
+            filters,
           });
         }
       } else {
@@ -2013,6 +2040,10 @@ const ScatterPage = () => {
       setSelectedColumns(initialConfigColumns);
     }
     setSelectedSources(initialConfigSelectedFiles);
+    // 过滤掉未完成的筛选条件
+    const validFilters = initialConfigFilters.filter(
+      (f) => f.column && f.value !== ''
+    );
     await handleGenerate({
       mode: initialConfigMode,
       columns: initialConfigColumns,
@@ -2023,6 +2054,7 @@ const ScatterPage = () => {
       sourceType: 'files',
       sourceLabel: '原始文件',
       fileNames: initialConfigSelectedFiles,
+      filters: validFilters,
     });
   };
 
@@ -3783,7 +3815,7 @@ const ScatterPage = () => {
                             </div>
                             <div className="mt-3 max-h-60 space-y-2 overflow-y-auto pr-1">
                               {initialConfigAxisColumns.map((label) => {
-                                const disabledCols = ['FSC-A', 'SSC-A', 'FSC-H', 'FSC-W', 'Time'];
+                                const disabledCols = ['Time'];
                                 const isDisabled = disabledCols.includes(label);
                                 const checked = initialConfigAxisX === label;
                                 return (
@@ -3811,7 +3843,7 @@ const ScatterPage = () => {
                               )}
                             </div>
                             <p className="mt-2 text-xs text-slate-500">
-                              注：FSC-A、SSC-A、FSC-H、FSC-W、Time 列为系统保留列，不可选择
+                              注：Time 列为系统保留列，不可选择
                             </p>
                           </PopoverContent>
                         </Popover>
@@ -3843,7 +3875,7 @@ const ScatterPage = () => {
                             </div>
                             <div className="mt-3 max-h-60 space-y-2 overflow-y-auto pr-1">
                               {initialConfigAxisColumns.map((label) => {
-                                const disabledCols = ['FSC-A', 'SSC-A', 'FSC-H', 'FSC-W', 'Time'];
+                                const disabledCols = ['Time'];
                                 const isDisabled = disabledCols.includes(label);
                                 const checked = initialConfigAxisY === label;
                                 return (
@@ -3871,7 +3903,7 @@ const ScatterPage = () => {
                               )}
                             </div>
                             <p className="mt-2 text-xs text-slate-500">
-                              注：FSC-A、SSC-A、FSC-H、FSC-W、Time 列为系统保留列，不可选择
+                              注：Time 列为系统保留列，不可选择
                             </p>
                           </PopoverContent>
                         </Popover>
@@ -3898,6 +3930,92 @@ const ScatterPage = () => {
               <p className="text-xs text-slate-500">
                 留空或输入0表示读取所有文件的全部行数
               </p>
+            </div>
+
+            {/* 筛选条件 */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-medium text-slate-700">
+                  筛选条件
+                  <span className="ml-1 text-xs font-normal text-slate-500">(可选)</span>
+                </p>
+                <div className="flex items-center gap-2">
+                  {initialConfigFilters.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={handleClearFilters}
+                      className="text-xs text-slate-500 transition hover:text-slate-700"
+                    >
+                      清空全部
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={handleAddFilter}
+                    className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs font-medium text-slate-700 transition hover:bg-slate-50"
+                  >
+                    <Plus className="h-3 w-3" />
+                    添加条件
+                  </button>
+                </div>
+              </div>
+
+              {initialConfigFilters.length === 0 && (
+                <p className="text-xs text-slate-400">未设置筛选条件，将使用全部数据</p>
+              )}
+
+              {initialConfigFilters.map((filter, index) => (
+                <div key={filter.id} className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50/50 p-3">
+                  <span className="text-xs font-medium text-slate-500 w-6 shrink-0">{index + 1}.</span>
+                  <div className="flex-1 flex items-center gap-2">
+                    <select
+                      value={filter.column}
+                      onChange={(e) => handleFilterChange(filter.id, 'column', e.target.value)}
+                      className="flex-1 min-w-0 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-amber-400"
+                    >
+                      <option value="">选择列</option>
+                      {initialConfigNumericColumns.map((col) => (
+                        <option key={col} value={col}>
+                          {col}
+                        </option>
+                      ))}
+                    </select>
+                    <select
+                      value={filter.operator}
+                      onChange={(e) => handleFilterChange(filter.id, 'operator', e.target.value)}
+                      className="w-16 shrink-0 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-amber-400"
+                    >
+                      <option value=">">&gt;</option>
+                      <option value="<">&lt;</option>
+                      <option value="=">=</option>
+                      <option value=">=">≥</option>
+                      <option value="<=">≤</option>
+                      <option value="!=">≠</option>
+                    </select>
+                    <input
+                      type="number"
+                      value={filter.value}
+                      onChange={(e) => handleFilterChange(filter.id, 'value', e.target.value)}
+                      placeholder="数值"
+                      className="w-20 shrink-0 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-amber-400"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveFilter(filter.id)}
+                    className="rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-200 hover:text-slate-600 shrink-0"
+                    title="删除此条件"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              ))}
+
+              {initialConfigFilters.length > 0 && (
+                <p className="text-xs text-slate-500">
+                  多个筛选条件之间为"与"关系，需同时满足
+                </p>
+              )}
             </div>
           </div>
           <DialogFooter>

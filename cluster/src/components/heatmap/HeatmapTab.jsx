@@ -1,6 +1,13 @@
 import React, { useRef } from 'react';
-import { Download } from 'lucide-react';
+import { Download, FileImage, FileText } from 'lucide-react';
 import HeatmapDendrogram from '../HeatmapDendrogram';
+import { downloadImageAsPdf } from '../../utils/exportUtils';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '../ui/dropdown-menu';
 
 /**
  * 热图标签页组件
@@ -8,7 +15,7 @@ import HeatmapDendrogram from '../HeatmapDendrogram';
 const HeatmapTab = ({ heatmapPayload, heatmapSize, rootFontSize }) => {
   const heatmapSvgRef = useRef(null);
 
-  const handleDownloadImage = () => {
+  const handleDownloadImage = async (format = 'png') => {
     if (!heatmapSvgRef.current) return;
 
     const svgElement = heatmapSvgRef.current;
@@ -38,7 +45,9 @@ const HeatmapTab = ({ heatmapPayload, heatmapSize, rootFontSize }) => {
     const svgUrl = URL.createObjectURL(svgBlob);
     const image = new Image();
 
-    image.onload = () => {
+    const timestamp = new Date().toISOString().replace(/[-:TZ.]/g, '').slice(0, 14);
+
+    image.onload = async () => {
       const scale = Math.max(window.devicePixelRatio || 1, 2) * Math.max(1, fontScale);
       const canvas = document.createElement('canvas');
       canvas.width = Math.max(1, Math.floor(width * scale));
@@ -55,16 +64,22 @@ const HeatmapTab = ({ heatmapPayload, heatmapSize, rootFontSize }) => {
       ctx.fillRect(0, 0, width, height);
       ctx.drawImage(image, 0, 0, width, height);
       URL.revokeObjectURL(svgUrl);
-      canvas.toBlob((blob) => {
-        if (!blob) return;
-        const pngUrl = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        const timestamp = new Date().toISOString().replace(/[-:TZ.]/g, '').slice(0, 14);
-        link.download = `heatmap-cluster-${timestamp}.png`;
-        link.href = pngUrl;
-        link.click();
-        setTimeout(() => URL.revokeObjectURL(pngUrl), 1000);
-      }, 'image/png');
+
+      if (format === 'pdf') {
+        // 将 canvas 转换为 data URL 并生成 PDF
+        const dataUrl = canvas.toDataURL('image/png');
+        await downloadImageAsPdf(dataUrl, `heatmap-cluster-${timestamp}`, { orientation: 'landscape' });
+      } else {
+        canvas.toBlob((blob) => {
+          if (!blob) return;
+          const pngUrl = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.download = `heatmap-cluster-${timestamp}.png`;
+          link.href = pngUrl;
+          link.click();
+          setTimeout(() => URL.revokeObjectURL(pngUrl), 1000);
+        }, 'image/png');
+      }
     };
 
     image.onerror = () => {
@@ -78,14 +93,27 @@ const HeatmapTab = ({ heatmapPayload, heatmapSize, rootFontSize }) => {
     <>
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-white/90 p-4 shadow-sm">
         <div className="text-sm text-slate-600">热图聚类树</div>
-        <button
-          type="button"
-          onClick={handleDownloadImage}
-          className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 transition hover:bg-slate-50"
-        >
-          <Download className="h-4 w-4" />
-          下载热图图片
-        </button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 transition hover:bg-slate-50"
+            >
+              <Download className="h-4 w-4" />
+              下载热图
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onClick={() => handleDownloadImage('png')}>
+              <FileImage className="mr-2 h-4 w-4" />
+              下载为 PNG
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => handleDownloadImage('pdf')}>
+              <FileText className="mr-2 h-4 w-4" />
+              下载为 PDF
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
       <div className="mt-3 rounded-2xl bg-white/90 p-5 shadow-sm">
         <HeatmapDendrogram

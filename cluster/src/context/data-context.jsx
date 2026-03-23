@@ -609,7 +609,7 @@ export const DataProvider = ({ children }) => {
   }, [mapResponseToScatter, rowLimit, selectedX, selectedY, snapshotScatterState, uploadedFiles]);
 
   const fetchScatterByFilters = useCallback(
-    async ({ columns, sources, limitOverride, fileNames: fileNamesOverride } = {}) => {
+    async ({ columns, sources, limitOverride, fileNames: fileNamesOverride, filters = [] } = {}) => {
       const hasFileOverride =
         Array.isArray(fileNamesOverride) && fileNamesOverride.length > 0;
       if ((!uploadedFiles || uploadedFiles.length === 0) && !hasFileOverride) {
@@ -640,6 +640,15 @@ export const DataProvider = ({ children }) => {
         formData.append('lineNum', String(effectiveLimit));
         appendColumnsToForm(formData, columns);
 
+        // 添加筛选条件
+        if (filters && filters.length > 0) {
+          filters.forEach((filter, index) => {
+            formData.append(`filterColumns[${index}]`, filter.column);
+            formData.append(`filterOperators[${index}]`, filter.operator);
+            formData.append(`filterValues[${index}]`, filter.value);
+          });
+        }
+
         const responseData = await requestApi('/upload/file', {
           method: 'POST',
           body: formData,
@@ -669,7 +678,7 @@ export const DataProvider = ({ children }) => {
   );
 
   const fetchScatter2D = useCallback(
-    async ({ xColumn, yColumn, sources, limitOverride, fileNames: fileNamesOverride } = {}) => {
+    async ({ xColumn, yColumn, sources, limitOverride, fileNames: fileNamesOverride, filters = [] } = {}) => {
       const hasFileOverride =
         Array.isArray(fileNamesOverride) && fileNamesOverride.length > 0;
       if ((!uploadedFiles || uploadedFiles.length === 0) && !hasFileOverride) {
@@ -696,6 +705,15 @@ export const DataProvider = ({ children }) => {
         formData.append('lineNum', String(effectiveLimit));
         formData.append('xColumn', xColumn);
         formData.append('yColumn', yColumn);
+
+        // 添加筛选条件
+        if (filters && filters.length > 0) {
+          filters.forEach((filter, index) => {
+            formData.append(`filterColumns[${index}]`, filter.column);
+            formData.append(`filterOperators[${index}]`, filter.operator);
+            formData.append(`filterValues[${index}]`, filter.value);
+          });
+        }
 
         const responseData = await requestApi('/upload/xy', {
           method: 'POST',

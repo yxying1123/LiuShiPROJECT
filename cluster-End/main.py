@@ -349,6 +349,9 @@ async def upload_file(
     lineNum: int = Form(0),                # 接收数字类型的表单字段，默认为0表示读取所有行
     columns: List[str] = Form(...),        # 接收多个 columns 参数
     fileNames: List[str] = Form(None),
+    filterColumns: List[str] = Form(None),      # 筛选列名列表
+    filterOperators: List[str] = Form(None),    # 筛选操作符列表
+    filterValues: List[str] = Form(None),       # 筛选值列表
 ):
     sources = []
     if fileNames:
@@ -362,11 +365,24 @@ async def upload_file(
     else:
         raise HTTPException(status_code=400, detail="请提供文件或文件名")
 
+    # 构建筛选条件
+    filters = None
+    if filterColumns and filterOperators and filterValues:
+        filters = []
+        for i in range(len(filterColumns)):
+            if i < len(filterOperators) and i < len(filterValues):
+                filters.append({
+                    "column": filterColumns[i],
+                    "operator": filterOperators[i],
+                    "value": filterValues[i]
+                })
+
     sample_data, sample_all, sam = reduction.load_and_sample(
         sources,
         lineNum,
         columns,
         return_all=True,
+        filters=filters,
     )
 
     umap_df = reduction.run_umap(sample_data, UMAP_PARAMS)
@@ -386,6 +402,9 @@ async def upload_xy(
     xColumn: str = Form(...),
     yColumn: str = Form(...),
     fileNames: List[str] = Form(None),
+    filterColumns: List[str] = Form(None),      # 筛选列名列表
+    filterOperators: List[str] = Form(None),    # 筛选操作符列表
+    filterValues: List[str] = Form(None),       # 筛选值列表
 ):
     sources = []
     if fileNames:
@@ -399,7 +418,19 @@ async def upload_xy(
     else:
         raise HTTPException(status_code=400, detail="请提供文件或文件名")
 
-    sample_data, sam = reduction.load_and_sample_xy(sources, lineNum, xColumn, yColumn)
+    # 构建筛选条件
+    filters = None
+    if filterColumns and filterOperators and filterValues:
+        filters = []
+        for i in range(len(filterColumns)):
+            if i < len(filterOperators) and i < len(filterValues):
+                filters.append({
+                    "column": filterColumns[i],
+                    "operator": filterOperators[i],
+                    "value": filterValues[i]
+                })
+
+    sample_data, sam = reduction.load_and_sample_xy(sources, lineNum, xColumn, yColumn, filters=filters)
     sample_data = sample_data.reset_index(drop=True)
     x_values = pandas.to_numeric(sample_data[xColumn], errors="coerce")
     y_values = pandas.to_numeric(sample_data[yColumn], errors="coerce")

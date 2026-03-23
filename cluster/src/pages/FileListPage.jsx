@@ -27,7 +27,7 @@ const FileListPage = () => {
   // 数据整合弹窗状态
   const [isIntegrationOpen, setIsIntegrationOpen] = useState(false);
   const [integrationFiles, setIntegrationFiles] = useState([]);
-  const [cofactor, setCofactor] = useState(150);
+  const [cofactor, setCofactor] = useState(5);
 
   const fileCount = storedFiles.length;
 

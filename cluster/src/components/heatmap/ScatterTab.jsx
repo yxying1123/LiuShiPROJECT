@@ -1,6 +1,12 @@
 import React, { useState, useRef, useCallback } from 'react';
-import { Download } from 'lucide-react';
+import { Download, FileImage, FileText } from 'lucide-react';
 import Plotly from 'plotly.js-dist-min';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '../ui/dropdown-menu';
 import ScatterPlot from '../ScatterPlot';
 import ScatterLegendPanel from './ScatterLegendPanel';
 import PreviewGallery from './PreviewGallery';
@@ -148,14 +154,29 @@ const ScatterTab = ({
         <span className="text-sm text-slate-500">
           当前显示 {filteredScatterPoints.length} / {scatterPoints.length}
         </span>
-        <button
-          type="button"
-          onClick={onDownloadScatterImage}
-          className="ml-auto inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 transition hover:bg-slate-50"
-        >
-          <Download className="h-4 w-4" />
-          下载散点图
-        </button>
+        <div className="ml-auto">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 transition hover:bg-slate-50"
+              >
+                <Download className="h-4 w-4" />
+                下载散点图
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => onDownloadScatterImage(scatterPlotNode, 'png')}>
+                <FileImage className="mr-2 h-4 w-4" />
+                下载为 PNG
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onDownloadScatterImage(scatterPlotNode, 'pdf')}>
+                <FileText className="mr-2 h-4 w-4" />
+                下载为 PDF
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       </div>
 
       {/* 主内容区 */}

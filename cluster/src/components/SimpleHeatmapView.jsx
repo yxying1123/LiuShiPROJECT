@@ -1,8 +1,15 @@
 import React, { useMemo, useState, useRef, useCallback } from 'react';
-import { Download } from 'lucide-react';
+import { Download, FileImage, FileText } from 'lucide-react';
 import { toPng } from 'html-to-image';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
+import { downloadImageAsPdf } from '../utils/exportUtils';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from './ui/dropdown-menu';
 
 /**
  * 简化版热图组件（无树形结构）
@@ -120,7 +127,7 @@ const SimpleHeatmapView = ({ rows = [], cols = [], values = [], title = '自定�
   }, [values, cols, rows]);
 
   // 下载热图为图片
-  const handleDownloadImage = useCallback(async () => {
+  const handleDownloadImage = useCallback(async (format = 'png') => {
     if (!heatmapRef.current || isDownloading) return;
 
     setIsDownloading(true);
@@ -130,12 +137,17 @@ const SimpleHeatmapView = ({ rows = [], cols = [], values = [], title = '自定�
         pixelRatio: 2,
         backgroundColor: '#ffffff',
       });
-      
-      const link = document.createElement('a');
+
       const timestamp = new Date().toISOString().replace(/[-:TZ.]/g, '').slice(0, 14);
-      link.download = `heatmap-${timestamp}.png`;
-      link.href = dataUrl;
-      link.click();
+
+      if (format === 'pdf') {
+        await downloadImageAsPdf(dataUrl, `heatmap-${timestamp}`, { orientation: 'landscape' });
+      } else {
+        const link = document.createElement('a');
+        link.download = `heatmap-${timestamp}.png`;
+        link.href = dataUrl;
+        link.click();
+      }
     } catch (err) {
       console.error('下载热图图片失败:', err);
       // 降级为下载 CSV
@@ -194,15 +206,28 @@ const SimpleHeatmapView = ({ rows = [], cols = [], values = [], title = '自定�
           {/* 标题和下载按钮 */}
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white/90 p-4 shadow-sm">
             <div className="text-sm font-medium text-slate-700">{title}</div>
-            <button
-              type="button"
-              onClick={handleDownloadImage}
-              disabled={isDownloading}
-              className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
-            >
-              <Download className="h-4 w-4" />
-              {isDownloading ? '下载中...' : '下载热图图片'}
-            </button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  disabled={isDownloading}
+                  className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
+                >
+                  <Download className="h-4 w-4" />
+                  {isDownloading ? '下载中...' : '下载热图'}
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => handleDownloadImage('png')}>
+                  <FileImage className="mr-2 h-4 w-4" />
+                  下载为 PNG
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleDownloadImage('pdf')}>
+                  <FileText className="mr-2 h-4 w-4" />
+                  下载为 PDF
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
 
           {/* 热图可视化 - 彩色格子 */}

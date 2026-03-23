@@ -25,7 +25,7 @@ import {
 import { useHeatmapLayout } from '../hooks/useHeatmapLayout';
 import { useScatterPanelLayout } from '../hooks/useScatterPanelLayout';
 import { useScatterFilters } from '../hooks/useScatterFilters';
-import { generateTimestampFilename, downloadCsv, remapScatterRowsForExport } from '../utils/exportUtils';
+import { generateTimestampFilename, downloadCsv, remapScatterRowsForExport, downloadImageAsPdf } from '../utils/exportUtils';
 import { calculateValueRange, getColorFieldOptions } from '../utils/dataHelpers';
 import { SCATTER_COLOR_SCALE } from '../components/ScatterPlot';
 
@@ -148,7 +148,7 @@ const HeatmapPage = () => {
   };
 
   // 下载处理
-  const handleDownloadScatterImage = async (plotNode) => {
+  const handleDownloadScatterImage = async (plotNode, format = 'png') => {
     if (!plotNode || !Plotly) return;
     try {
       const url = await Plotly.toImage(plotNode, {
@@ -156,11 +156,16 @@ const HeatmapPage = () => {
         width: plotNode.clientWidth || 1200,
         height: plotNode.clientHeight || 600,
       });
-      const link = document.createElement('a');
       const timestamp = new Date().toISOString().replace(/[-:TZ.]/g, '').slice(0, 14);
-      link.download = `scatter-plot-${timestamp}.png`;
-      link.href = url;
-      link.click();
+
+      if (format === 'pdf') {
+        await downloadImageAsPdf(url, `scatter-plot-${timestamp}`, { orientation: 'landscape' });
+      } else {
+        const link = document.createElement('a');
+        link.download = `scatter-plot-${timestamp}.png`;
+        link.href = url;
+        link.click();
+      }
     } catch {
       // ignore
     }

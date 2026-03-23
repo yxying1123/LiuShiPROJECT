@@ -1,5 +1,5 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState, forwardRef, useImperativeHandle } from 'react';
-import { ChevronDown, ChevronUp, Download, GitBranch, Save } from 'lucide-react';
+import { ChevronDown, ChevronUp, Download, FileImage, FileText, GitBranch, Save } from 'lucide-react';
 import Plotly from 'plotly.js-dist-min';
 import HeatmapDendrogram from './HeatmapDendrogram';
 import { SCATTER_COLOR_SCALE, getScatterColor } from './ScatterPlot';
@@ -19,6 +19,13 @@ import { Checkbox } from './ui/checkbox';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 import { Slider } from './ui/slider';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from './ui/dropdown-menu';
+import { downloadImageAsPdf } from '../utils/exportUtils';
 
 const normalizeGroupValue = (value) =>
   value === null || value === undefined || value === '' ? '' : String(value);
@@ -224,7 +231,7 @@ const ClusterResultsPanel = forwardRef(({ onUseAsInput }, ref) => {
     });
   };
 
-  const handleDownloadImage = () => {
+  const handleDownloadImage = async (format = 'png') => {
     if (!heatmapSvgRef.current) return;
 
     const svgElement = heatmapSvgRef.current;
@@ -254,7 +261,9 @@ const ClusterResultsPanel = forwardRef(({ onUseAsInput }, ref) => {
     const svgUrl = URL.createObjectURL(svgBlob);
     const image = new Image();
 
-    image.onload = () => {
+    const timestamp = new Date().toISOString().replace(/[-:TZ.]/g, '').slice(0, 14);
+
+    image.onload = async () => {
       const scale = Math.max(window.devicePixelRatio || 1, 2) * Math.max(1, fontScale);
       const canvas = document.createElement('canvas');
       canvas.width = Math.max(1, Math.floor(width * scale));
@@ -271,16 +280,21 @@ const ClusterResultsPanel = forwardRef(({ onUseAsInput }, ref) => {
       ctx.fillRect(0, 0, width, height);
       ctx.drawImage(image, 0, 0, width, height);
       URL.revokeObjectURL(svgUrl);
-      canvas.toBlob((blob) => {
-        if (!blob) return;
-        const pngUrl = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        const timestamp = new Date().toISOString().replace(/[-:TZ.]/g, '').slice(0, 14);
-        link.download = `heatmap-cluster-${timestamp}.png`;
-        link.href = pngUrl;
-        link.click();
-        setTimeout(() => URL.revokeObjectURL(pngUrl), 1000);
-      }, 'image/png');
+
+      if (format === 'pdf') {
+        const dataUrl = canvas.toDataURL('image/png');
+        await downloadImageAsPdf(dataUrl, `heatmap-cluster-${timestamp}`, { orientation: 'landscape' });
+      } else {
+        canvas.toBlob((blob) => {
+          if (!blob) return;
+          const pngUrl = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.download = `heatmap-cluster-${timestamp}.png`;
+          link.href = pngUrl;
+          link.click();
+          setTimeout(() => URL.revokeObjectURL(pngUrl), 1000);
+        }, 'image/png');
+      }
     };
 
     image.onerror = () => {
@@ -290,7 +304,7 @@ const ClusterResultsPanel = forwardRef(({ onUseAsInput }, ref) => {
     image.src = svgUrl;
   };
 
-  const handleDownloadScatterImage = async () => {
+  const handleDownloadScatterImage = async (format = 'png') => {
     if (!scatterPlotNode || !Plotly) return;
     try {
       const url = await Plotly.toImage(scatterPlotNode, {
@@ -298,11 +312,16 @@ const ClusterResultsPanel = forwardRef(({ onUseAsInput }, ref) => {
         width: scatterPlotNode.clientWidth || 1200,
         height: scatterPlotNode.clientHeight || 600,
       });
-      const link = document.createElement('a');
       const timestamp = new Date().toISOString().replace(/[-:TZ.]/g, '').slice(0, 14);
-      link.download = `scatter-plot-${timestamp}.png`;
-      link.href = url;
-      link.click();
+
+      if (format === 'pdf') {
+        await downloadImageAsPdf(url, `scatter-plot-${timestamp}`, { orientation: 'landscape' });
+      } else {
+        const link = document.createElement('a');
+        link.download = `scatter-plot-${timestamp}.png`;
+        link.href = url;
+        link.click();
+      }
     } catch (error) {
       // ignore
     }
@@ -337,14 +356,19 @@ const ClusterResultsPanel = forwardRef(({ onUseAsInput }, ref) => {
     downloadHeatmapCsv(`cluster-table-${timestamp}.csv`, heatmapPayload.heatmap);
   };
 
-  const handleDownloadPreview = (preview) => {
+  const handleDownloadPreview = async (preview, format = 'png') => {
     if (!preview?.url) return;
     const timestamp = new Date().toISOString().replace(/[-:TZ.]/g, '').slice(0, 14);
     const name = sanitizeFileName(preview.label || 'preview');
-    const link = document.createElement('a');
-    link.download = `scatter-preview-${name}-${timestamp}.png`;
-    link.href = preview.url;
-    link.click();
+
+    if (format === 'pdf') {
+      await downloadImageAsPdf(preview.url, `scatter-preview-${name}-${timestamp}`, { orientation: 'landscape' });
+    } else {
+      const link = document.createElement('a');
+      link.download = `scatter-preview-${name}-${timestamp}.png`;
+      link.href = preview.url;
+      link.click();
+    }
   };
 
   const handleGeneratePreviews = async () => {
@@ -844,14 +868,27 @@ const ClusterResultsPanel = forwardRef(({ onUseAsInput }, ref) => {
         <TabsContent value="heatmap">
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-white/90 p-4 shadow-sm">
             <div className="text-sm text-slate-600">热图聚类树</div>
-            <button
-              type="button"
-              onClick={handleDownloadImage}
-              className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 transition hover:bg-slate-50"
-            >
-              <Download className="h-4 w-4" />
-              下载热图图片
-            </button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 transition hover:bg-slate-50"
+                >
+                  <Download className="h-4 w-4" />
+                  下载热图
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => handleDownloadImage('png')}>
+                  <FileImage className="mr-2 h-4 w-4" />
+                  下载为 PNG
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleDownloadImage('pdf')}>
+                  <FileText className="mr-2 h-4 w-4" />
+                  下载为 PDF
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
           <div ref={heatmapContainerRef} className="mt-3 rounded-2xl bg-white/90 p-5 shadow-sm">
             <HeatmapDendrogram
@@ -1008,13 +1045,27 @@ const ClusterResultsPanel = forwardRef(({ onUseAsInput }, ref) => {
             ) : null}
           </div>
           <DialogFooter>
-            <button
-              type="button"
-              onClick={() => handleDownloadPreview(activePreview)}
-              className="inline-flex items-center justify-center rounded-full border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
-            >
-              下载图片
-            </button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  className="inline-flex items-center justify-center rounded-full border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+                >
+                  <Download className="mr-2 h-4 w-4" />
+                  下载
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => handleDownloadPreview(activePreview, 'png')}>
+                  <FileImage className="mr-2 h-4 w-4" />
+                  下载为 PNG
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleDownloadPreview(activePreview, 'pdf')}>
+                  <FileText className="mr-2 h-4 w-4" />
+                  下载为 PDF
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </DialogFooter>
         </DialogContent>
       </Dialog>

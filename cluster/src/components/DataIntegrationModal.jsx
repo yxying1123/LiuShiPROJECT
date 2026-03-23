@@ -66,11 +66,8 @@ const DataIntegrationModal = ({
                   value={cofactor}
                   onChange={(event) => onCofactorChange(event.target.value)}
                   className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-amber-400"
-                  placeholder="例如 150"
+                  placeholder="例如 5"
                 />
-                <p className="mt-2 text-xs text-slate-500">
-                  荧光流式推荐 150-500，质谱流式推荐 5。输出文件名将使用对应 FCS 文件名。
-                </p>
               </div>
             </div>
 

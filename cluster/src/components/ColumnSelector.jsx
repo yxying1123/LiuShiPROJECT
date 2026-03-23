@@ -1,8 +1,8 @@
 import React from 'react';
 import { BarChart3 } from 'lucide-react';
 
-// 默认禁用的列名（FCS文件中的标准通道名）
-const DISABLED_COLUMNS = ['FSC-A', 'SSC-A', 'FSC-H', 'FSC-W', 'time'];
+// 默认禁用的列名（time 列为系统保留列）
+const DISABLED_COLUMNS = ['time'];
 
 const ColumnSelector = ({ columns, selectedX, selectedY, onXChange, onYChange }) => {
   if (!columns || columns.length === 0) {
@@ -63,7 +63,7 @@ const ColumnSelector = ({ columns, selectedX, selectedY, onXChange, onYChange })
         </div>
       </div>
       <p className="mt-3 text-xs text-slate-500">
-        注：FSC-A、SSC-A、FSC-H、FSC-W、time 列为系统保留列，不可选择
+        注：time 列为系统保留列，不可选择
       </p>
     </div>
   );

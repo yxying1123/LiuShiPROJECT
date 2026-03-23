@@ -24,11 +24,63 @@ def _read_csv_from_source(source: Union[UploadFile, str]) -> tuple[pd.DataFrame,
 
 
 
+def _apply_filters(df: pd.DataFrame, filters: List[Dict]) -> pd.DataFrame:
+    """
+    根据筛选条件过滤 DataFrame
+
+    参数：
+    df (pd.DataFrame): 原始数据
+    filters (List[Dict]): 筛选条件列表，每个条件包含 column, operator, value
+
+    返回：
+    pd.DataFrame: 过滤后的数据
+    """
+    if not filters:
+        return df
+
+    mask = pd.Series([True] * len(df), index=df.index)
+
+    for f in filters:
+        column = f.get("column")
+        operator = f.get("operator")
+        value = f.get("value")
+
+        if not column or not operator or value is None:
+            continue
+
+        if column not in df.columns:
+            continue
+
+        # 将列转换为数值类型
+        col_data = pd.to_numeric(df[column], errors="coerce")
+
+        try:
+            value = float(value)
+        except (ValueError, TypeError):
+            continue
+
+        if operator == ">":
+            mask &= col_data > value
+        elif operator == "<":
+            mask &= col_data < value
+        elif operator == "=":
+            mask &= col_data == value
+        elif operator == ">=":
+            mask &= col_data >= value
+        elif operator == "<=":
+            mask &= col_data <= value
+        elif operator == "!=":
+            mask &= col_data != value
+
+    return df[mask].reset_index(drop=True)
+
+
 def load_and_sample(
     files: List[Union[UploadFile, str]],
     lineNum: int,
     columns: List[str],
     return_all: bool = False,
+    filters: List[Dict] = None,
 ):
     """
     从多个上传的文件中读取数据，随机采样指定行数，保留指定列并合并。
@@ -38,6 +90,7 @@ def load_and_sample(
     lineNum (int): 每个文件中需要随机采样的行数。如果 <= 0，则读取所有行。
     columns (List[str]): 一个包含变量的列表，指定需要参与降维的列。
     return_all (bool): 是否额外返回包含所有列的采样数据。
+    filters (List[Dict]): 筛选条件列表。
 
     返回：
     pandas.DataFrame: 一个合并后的 DataFrame，包含所有文件的采样数据（仅数值列）。
@@ -49,6 +102,12 @@ def load_and_sample(
 
     for file in files:
         df, group = _read_csv_from_source(file)
+
+        # 应用筛选条件
+        if filters:
+            df = _apply_filters(df, filters)
+            if df.empty:
+                continue
 
         if selected_columns:
             reduction_cols = [col for col in selected_columns if col in df.columns]
@@ -92,16 +151,34 @@ def load_and_sample(
     return final_df, sam
 
 
-def load_and_sample_xy(files: List[Union[UploadFile, str]], lineNum: int, x_column: str, y_column: str):
+def load_and_sample_xy(files: List[Union[UploadFile, str]], lineNum: int, x_column: str, y_column: str, filters: List[Dict] = None):
     """
     从多个上传的文件中读取数据，随机采样指定行数，保留指定的 X/Y 列及其余字段并合并。
     当 lineNum <= 0 时，不进行采样，返回所有数据。
+
+    参数：
+    files (List[UploadFile]): 一个包含多个上传文件的列表。
+    lineNum (int): 每个文件中需要随机采样的行数。如果 <= 0，则读取所有行。
+    x_column (str): X 轴列名。
+    y_column (str): Y 轴列名。
+    filters (List[Dict]): 筛选条件列表。
+
+    返回：
+    pandas.DataFrame: 合并后的 DataFrame。
+    numpy.array: 样本名数组。
     """
     data_list = []
     sam = []
 
     for file in files:
         df, group = _read_csv_from_source(file)
+
+        # 应用筛选条件
+        if filters:
+            df = _apply_filters(df, filters)
+            if df.empty:
+                continue
+
         if x_column not in df.columns or y_column not in df.columns:
             continue
 
