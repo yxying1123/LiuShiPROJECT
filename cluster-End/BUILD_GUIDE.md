@@ -58,7 +58,27 @@ yarn install
 
 ## 打包方式
 
-### 方式一：使用通用打包脚本（推荐）
+### 方式一：使用本地一键打包脚本（最简单，推荐）
+
+`release-local.py` 是最简单的本地打包方式，一键完成所有步骤：
+
+```bash
+cd cluster-End
+
+# 打包当前平台（默认版本 v1.0.0）
+python release-local.py
+
+# 指定版本号打包
+python release-local.py v1.3.1
+# 或
+python release-local.py 1.3.1
+```
+
+打包完成后，文件会保存在 `../release/` 目录，文件名包含版本号：
+- Windows: `cluster-app-v1.3.1-windows-amd64.exe`
+- macOS: `cluster-app-v1.3.1-macos-arm64`
+
+### 方式二：使用通用打包脚本
 
 通用打包脚本会自动构建前端并打包后端：
 
@@ -75,7 +95,7 @@ python build.py --frontend
 python build.py --backend
 ```
 
-### 方式二：分平台打包
+### 方式三：分平台打包
 
 #### macOS 打包
 
@@ -217,6 +237,38 @@ xcopy /E /I ..\cluster\dist\* static\
 - `--collect-all`: 收集指定包的所有子模块
 - `--noconsole`: Windows 下不显示控制台窗口
 
+## 手动发布到 GitHub Release
+
+当 GitHub Actions 不可用时（如账单问题），可以手动打包并上传：
+
+### 1. 本地打包
+
+使用 `release-local.py` 脚本打包（见上文"方式一"）
+
+### 2. 创建 GitHub Release
+
+```bash
+# 创建标签
+git tag -a v1.3.1 -m "Release v1.3.1"
+git push origin v1.3.1
+```
+
+### 3. 手动上传文件
+
+1. 访问 https://github.com/yxying1123/LiuShiPROJECT/releases
+2. 点击 "Create a new release"
+3. 选择标签 `v1.3.1`
+4. 填写发布标题和说明
+5. 上传打包好的文件：
+   - `cluster-app-v1.3.1-windows-amd64.exe`
+   - `cluster-app-v1.3.1-macos-arm64`（如有）
+6. 点击 "Publish release"
+
+### 4. 验证发布
+
+- 检查 Release 页面是否正确显示
+- 下载文件测试是否能正常运行
+
 ## 更新日志
 
 ### 打包脚本更新记录
@@ -224,3 +276,4 @@ xcopy /E /I ..\cluster\dist\* static\
 - **2024-03-23**: 初始版本，支持 macOS 和 Windows 打包
 - 添加 `multiprocessing.freeze_support()` 支持，修复多进程相关问题
 - 添加 `--frontend` 和 `--backend` 参数支持分步构建
+- 添加 `release-local.py` 本地一键打包脚本
