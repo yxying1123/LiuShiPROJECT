@@ -18,6 +18,8 @@ env:
 jobs:
   build-windows:
     runs-on: windows-latest
+    permissions:
+      contents: write
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -75,14 +77,37 @@ jobs:
         run: |
           Get-ChildItem -Path cluster-End/dist -Recurse
 
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
+      - name: Rename executable with version
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}"
+          if (-not $version) {
+            $version = "${{ github.event.inputs.version }}"
+          }
+          $source = "cluster-End/dist/cluster-app-windows-amd64.exe"
+          $dest = "cluster-End/dist/cluster-app-${version}-windows-amd64.exe"
+          if (Test-Path $source) {
+            Rename-Item -Path $source -NewName $dest
+            Write-Host "Renamed to: $dest"
+          }
+
+      - name: Upload to Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
         with:
-          name: cluster-app-windows-amd64
-          path: cluster-End/dist/*.exe
+          tag_name: ${{ github.ref_name || github.event.inputs.version }}
+          name: Release ${{ github.ref_name || github.event.inputs.version }}
+          files: cluster-End/dist/*.exe
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   build-macos-arm:
     runs-on: macos-latest
+    permissions:
+      contents: write
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -136,57 +161,28 @@ jobs:
         run: |
           ls -la cluster-End/dist/
 
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: cluster-app-macos-arm64
-          path: cluster-End/dist/cluster-app-macos-arm64
-
-  release:
-    needs: [build-windows, build-macos-arm]
-    runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
-
-    permissions:
-      contents: write
-
-    steps:
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: artifacts/
-
-      - name: List artifacts
+      - name: Rename executable with version
         run: |
-          echo "Downloaded artifacts:"
-          find artifacts/ -type f -ls
-
-      - name: Rename artifacts with version
-        run: |
-          VERSION=${{ github.ref_name || github.event.inputs.version }}
-          mkdir -p release
-
-          # Windows
-          if [ -f "artifacts/cluster-app-windows-amd64/cluster-app-windows-amd64.exe" ]; then
-            cp "artifacts/cluster-app-windows-amd64/cluster-app-windows-amd64.exe" "release/cluster-app-${VERSION}-windows-amd64.exe"
+          VERSION="${{ github.ref_name }}"
+          if [ -z "$VERSION" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          fi
+          SOURCE="cluster-End/dist/cluster-app-macos-arm64"
+          DEST="cluster-End/dist/cluster-app-${VERSION}-macos-arm64"
+          if [ -f "$SOURCE" ]; then
+            mv "$SOURCE" "$DEST"
+            echo "Renamed to: $DEST"
           fi
 
-          # macOS ARM
-          if [ -f "artifacts/cluster-app-macos-arm64/cluster-app-macos-arm64" ]; then
-            cp "artifacts/cluster-app-macos-arm64/cluster-app-macos-arm64" "release/cluster-app-${VERSION}-macos-arm64"
-          fi
-
-          ls -la release/
-
-      - name: Create Release
+      - name: Upload to Release
         uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
         with:
           tag_name: ${{ github.ref_name || github.event.inputs.version }}
           name: Release ${{ github.ref_name || github.event.inputs.version }}
-          files: release/*
+          files: cluster-End/dist/cluster-app-*-macos-arm64
           generate_release_notes: true
           draft: false
           prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-# Trigger Actions
