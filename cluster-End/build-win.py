@@ -1,7 +1,16 @@
 #!/usr/bin/env python3
 """
 Windows-specific build script for the Cluster App.
-Assumes frontend is already built and copied to static/ directory.
+
+Usage:
+    python build-win.py
+
+Prerequisites:
+    1. Frontend must be built first: cd ..\cluster && npm run build
+    2. Static files must be copied: xcopy /E /I ..\cluster\dist static\
+    3. PyInstaller must be installed: pip install pyinstaller
+
+Note: Run this script in a Windows environment (Windows 10/11 or Wine).
 """
 
 import os
@@ -56,7 +65,7 @@ def build_executable():
     icon_source = os.path.join(backend_dir, "..", "cluster", "public", "细胞分析.png")
     icon_source = os.path.abspath(icon_source)
     icon_dest = os.path.join(backend_dir, "icon.ico")
-    
+
     # Use .ico file if exists, otherwise use .png
     if os.path.exists(os.path.join(backend_dir, "..", "cluster", "public", "icon.ico")):
         icon_path = os.path.join(backend_dir, "..", "cluster", "public", "icon.ico")
@@ -65,7 +74,7 @@ def build_executable():
     else:
         icon_path = None
         print("Warning: Icon file not found, using default icon")
-    
+
     # PyInstaller command for Windows
     cmd = [
         sys.executable,
@@ -77,16 +86,16 @@ def build_executable():
         "--workpath", os.path.join(backend_dir, "build"),
         "--specpath", backend_dir,
     ]
-    
+
     # Add icon if exists
     if icon_path:
         cmd.extend(["--icon", icon_path])
-    
+
     # Add data files - Windows uses semicolon
     cmd.extend([
-        "--add-data", f"static;static",
-        "--add-data", f"model;model",
-        "--add-data", f"service;service",
+        "--add-data", "static;static",
+        "--add-data", "model;model",
+        "--add-data", "service;service",
         # Windows-specific options
         "--noconsole",
         # Hidden imports for scientific libraries
@@ -152,6 +161,19 @@ def main():
     print("Cluster App Windows Build Script")
     print("=" * 60)
 
+    # Check if static directory exists
+    backend_dir = os.path.dirname(os.path.abspath(__file__))
+    static_dir = os.path.join(backend_dir, "static")
+    if not os.path.exists(static_dir):
+        print("\n⚠️  Warning: static\ directory not found!")
+        print("Please build the frontend first:")
+        print("  cd ..\\cluster")
+        print("  npm run build")
+        print("  xcopy /E /I ..\\cluster\\dist static\\")
+        print("\nOr run the full build script:")
+        print("  python build.py")
+        sys.exit(1)
+
     # Build executable
     exe_path = build_executable()
 
@@ -159,6 +181,8 @@ def main():
     print("Build completed successfully!")
     print(f"Executable: {exe_path}")
     print(f"File exists: {os.path.exists(exe_path)}")
+    print("\nTo run the app:")
+    print(f"  {exe_path}")
     print("=" * 60)
 
 

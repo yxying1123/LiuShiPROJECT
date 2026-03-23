@@ -11,7 +11,12 @@ import webbrowser
 import threading
 import time
 import logging
+import multiprocessing
 from pathlib import Path
+
+# Required for PyInstaller-frozen apps that indirectly spawn child processes
+# via joblib/sklearn/UMAP on macOS and Windows.
+multiprocessing.freeze_support()
 
 # Fix for PyInstaller + Uvicorn logging issue on Windows
 # Ensure stdout/stderr are not None to avoid 'isatty' AttributeError

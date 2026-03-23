@@ -5,6 +5,11 @@ This script:
 1. Builds the frontend (React + Vite)
 2. Packages the backend (FastAPI) with PyInstaller
 3. Embeds the frontend static files into the executable
+
+Usage:
+    python build.py              # Build for current platform
+    python build.py --frontend   # Build frontend only
+    python build.py --backend    # Build backend only (requires frontend built)
 """
 
 import os
@@ -12,6 +17,7 @@ import sys
 import shutil
 import subprocess
 import platform
+import argparse
 
 
 def run_command(cmd, cwd=None, env=None):
@@ -51,10 +57,10 @@ def build_frontend():
     run_command(["npm", "run", "build"], cwd=frontend_dir, env=env)
 
     # Return the build output directory
-    build_dir = os.path.join(frontend_dir, "build")
+    build_dir = os.path.join(frontend_dir, "dist")
     if not os.path.exists(build_dir):
-        # Fallback to dist if build doesn't exist
-        build_dir = os.path.join(frontend_dir, "dist")
+        # Fallback to build if dist doesn't exist
+        build_dir = os.path.join(frontend_dir, "build")
 
     return build_dir
 
@@ -113,7 +119,7 @@ def build_executable():
     # 获取图标路径（支持 .png 和 .ico）
     icon_source = os.path.join(backend_dir, "..", "cluster", "public", "细胞分析.png")
     icon_source = os.path.abspath(icon_source)
-    
+
     # 如果存在 .ico 文件则直接使用，否则使用 .png
     if os.path.exists(os.path.join(backend_dir, "..", "cluster", "public", "icon.ico")):
         icon_path = os.path.join(backend_dir, "..", "cluster", "public", "icon.ico")
@@ -122,6 +128,12 @@ def build_executable():
     else:
         icon_path = None
         print("Warning: 图标文件未找到，将使用默认图标")
+
+    # Determine path separator for --add-data based on platform
+    if platform.system().lower() == "windows":
+        path_sep = ";"
+    else:
+        path_sep = ":"
 
     # PyInstaller command
     cmd = [
@@ -134,16 +146,16 @@ def build_executable():
         "--workpath", os.path.join(backend_dir, "build"),
         "--specpath", backend_dir,
     ]
-    
+
     # Add icon if exists
     if icon_path:
         cmd.extend(["--icon", icon_path])
-    
+
     # Add data files
     cmd.extend([
-        "--add-data", f"static{os.pathsep}static",
-        "--add-data", f"model{os.pathsep}model",
-        "--add-data", f"service{os.pathsep}service",
+        "--add-data", f"static{path_sep}static",
+        "--add-data", f"model{path_sep}model",
+        "--add-data", f"service{path_sep}service",
         # Hidden imports for scientific libraries
         "--hidden-import", "uvicorn.logging",
         "--hidden-import", "uvicorn.loops",
@@ -211,23 +223,45 @@ def build_executable():
 
 def main():
     """Main build process."""
+    parser = argparse.ArgumentParser(description="Build Cluster App executable")
+    parser.add_argument("--frontend", action="store_true", help="Build frontend only")
+    parser.add_argument("--backend", action="store_true", help="Build backend only (requires frontend built)")
+    args = parser.parse_args()
+
     print("=" * 60)
     print("Cluster App Build Script")
+    print(f"Platform: {platform.system()} ({platform.machine()})")
     print("=" * 60)
 
-    # Step 1: Build frontend
-    frontend_build = build_frontend()
+    if args.frontend:
+        # Build frontend only
+        frontend_build = build_frontend()
+        copy_frontend_to_backend(frontend_build)
+        print("\n" + "=" * 60)
+        print("Frontend build completed!")
+        print("=" * 60)
+    elif args.backend:
+        # Build backend only
+        exe_path = build_executable()
+        print("\n" + "=" * 60)
+        print("Backend build completed!")
+        print(f"Executable: {exe_path}")
+        print("=" * 60)
+    else:
+        # Full build
+        # Step 1: Build frontend
+        frontend_build = build_frontend()
 
-    # Step 2: Copy frontend to backend
-    copy_frontend_to_backend(frontend_build)
+        # Step 2: Copy frontend to backend
+        copy_frontend_to_backend(frontend_build)
 
-    # Step 3: Build executable
-    exe_path = build_executable()
+        # Step 3: Build executable
+        exe_path = build_executable()
 
-    print("\n" + "=" * 60)
-    print("Build completed successfully!")
-    print(f"Executable: {exe_path}")
-    print("=" * 60)
+        print("\n" + "=" * 60)
+        print("Build completed successfully!")
+        print(f"Executable: {exe_path}")
+        print("=" * 60)
 
 
 if __name__ == "__main__":

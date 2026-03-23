@@ -1,7 +1,16 @@
 #!/usr/bin/env python3
 """
 macOS-specific build script for the Cluster App.
-Assumes frontend is already built and copied to static/ directory.
+
+Usage:
+    python build-macos.py          # Build for current architecture (arm64 or amd64)
+    python build-macos.py arm64    # Build for Apple Silicon (M1/M2/M3)
+    python build-macos.py amd64    # Build for Intel Mac
+
+Prerequisites:
+    1. Frontend must be built first: cd ../cluster && npm run build
+    2. Static files must be copied: cp -r ../cluster/dist static/
+    3. PyInstaller must be installed: pip install pyinstaller
 """
 
 import os
@@ -53,9 +62,9 @@ def build_executable(arch):
         "--workpath", os.path.join(backend_dir, "build"),
         "--specpath", backend_dir,
         # Add data files - macOS uses colon
-        "--add-data", f"static:static",
-        "--add-data", f"model:model",
-        "--add-data", f"service:service",
+        "--add-data", "static:static",
+        "--add-data", "model:model",
+        "--add-data", "service:service",
         # Hidden imports for scientific libraries
         "--hidden-import", "uvicorn.logging",
         "--hidden-import", "uvicorn.loops",
@@ -116,12 +125,32 @@ def build_executable(arch):
 def main():
     """Main build process."""
     # Get architecture from command line argument
-    arch = sys.argv[1] if len(sys.argv) > 1 else "arm64"
+    arch = sys.argv[1] if len(sys.argv) > 1 else None
+
+    # Auto-detect architecture if not specified
+    if arch is None:
+        machine = platform.machine().lower()
+        if machine == "arm64":
+            arch = "arm64"
+        else:
+            arch = "amd64"
 
     print("=" * 60)
     print("Cluster App macOS Build Script")
     print(f"Architecture: {arch}")
     print("=" * 60)
+
+    # Check if static directory exists
+    backend_dir = os.path.dirname(os.path.abspath(__file__))
+    static_dir = os.path.join(backend_dir, "static")
+    if not os.path.exists(static_dir):
+        print("\n⚠️  Warning: static/ directory not found!")
+        print("Please build the frontend first:")
+        print("  cd ../cluster && npm run build")
+        print("  cp -r ../cluster/dist static/")
+        print("\nOr run the full build script:")
+        print("  python build.py")
+        sys.exit(1)
 
     # Build executable
     exe_path = build_executable(arch)
@@ -130,6 +159,8 @@ def main():
     print("Build completed successfully!")
     print(f"Executable: {exe_path}")
     print(f"File exists: {os.path.exists(exe_path)}")
+    print("\nTo run the app:")
+    print(f"  {exe_path}")
     print("=" * 60)
 
 
