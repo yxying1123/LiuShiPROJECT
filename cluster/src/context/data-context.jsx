@@ -488,7 +488,7 @@ export const DataProvider = ({ children }) => {
         acc[key] = Number.isNaN(parsed) ? rawValue : parsed;
         return acc;
       }, {});
-      return {
+      const point = {
         id: index,
         x,
         y,
@@ -496,6 +496,13 @@ export const DataProvider = ({ children }) => {
         sourceId: samples[index] ?? '',
         ...extraValues,
       };
+      if (xKey) {
+        point[xKey] = x;
+      }
+      if (yKey) {
+        point[yKey] = y;
+      }
+      return point;
     }).filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y));
   }, []);
 
@@ -642,10 +649,10 @@ export const DataProvider = ({ children }) => {
 
         // 添加筛选条件
         if (filters && filters.length > 0) {
-          filters.forEach((filter, index) => {
-            formData.append(`filterColumns[${index}]`, filter.column);
-            formData.append(`filterOperators[${index}]`, filter.operator);
-            formData.append(`filterValues[${index}]`, filter.value);
+          filters.forEach((filter) => {
+            formData.append('filterColumns', filter.column);
+            formData.append('filterOperators', filter.operator);
+            formData.append('filterValues', filter.value);
           });
         }
 
@@ -708,10 +715,10 @@ export const DataProvider = ({ children }) => {
 
         // 添加筛选条件
         if (filters && filters.length > 0) {
-          filters.forEach((filter, index) => {
-            formData.append(`filterColumns[${index}]`, filter.column);
-            formData.append(`filterOperators[${index}]`, filter.operator);
-            formData.append(`filterValues[${index}]`, filter.value);
+          filters.forEach((filter) => {
+            formData.append('filterColumns', filter.column);
+            formData.append('filterOperators', filter.operator);
+            formData.append('filterValues', filter.value);
           });
         }
 

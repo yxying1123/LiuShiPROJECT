@@ -6,6 +6,8 @@ import {
   ChevronDown,
   ChevronUp,
   Download,
+  FileText,
+  Image as ImageIcon,
   Plus,
   Save,
   X,
@@ -37,6 +39,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
 import CustomLegendGroups from '../components/CustomLegendGroups';
 import SimpleHeatmapView from '../components/SimpleHeatmapView';
+import { downloadImageAsPdf } from '../utils/exportUtils';
 
 const PREVIEW_IMAGE_SIZE = { width: 360, height: 240 };
 const MIN_SCATTER_WIDTH = 520;
@@ -1331,8 +1334,15 @@ const ScatterPage = () => {
   const colorFieldOptions = useMemo(() => {
     if (!hasScatterData || activeScatterData.length === 0) return [];
     const excluded = new Set(['id', 'x', 'y', 'source', 'sourceId', 'group', 'cluster', '__index', '__restoreId']);
-    const keys = Object.keys(activeScatterData[0] || {}).filter((key) => !excluded.has(key));
-    return keys.filter((key) =>
+    const keys = new Set();
+    activeScatterData.forEach((point) => {
+      Object.keys(point || {}).forEach((key) => {
+        if (!excluded.has(key)) {
+          keys.add(key);
+        }
+      });
+    });
+    return Array.from(keys).filter((key) =>
       activeScatterData.some((point) => Number.isFinite(Number(point[key])))
     );
   }, [hasScatterData, activeScatterData]);
@@ -1345,8 +1355,15 @@ const ScatterPage = () => {
       ];
     }
     const excluded = new Set(['id', 'x', 'y', 'source', 'sourceId', 'group', 'cluster', '__index', '__restoreId']);
-    const keys = Object.keys(activeScatterData[0] || {}).filter((key) => !excluded.has(key));
-    const numericKeys = keys.filter((key) =>
+    const keys = new Set();
+    activeScatterData.forEach((point) => {
+      Object.keys(point || {}).forEach((key) => {
+        if (!excluded.has(key)) {
+          keys.add(key);
+        }
+      });
+    });
+    const numericKeys = Array.from(keys).filter((key) =>
       activeScatterData.some((point) => Number.isFinite(Number(point[key])))
     );
     return [
@@ -1609,6 +1626,41 @@ const ScatterPage = () => {
     link.click();
     document.body.removeChild(link);
   };
+
+  const handleDownloadScatterPlot = useCallback(
+    async (format = 'png') => {
+      const plotNode = mainPlotRef.current;
+      if (!plotNode || !Plotly || !hasScatterData) {
+        toast.error('暂无可下载的散点图');
+        return;
+      }
+      try {
+        const width = plotNode.clientWidth || Math.max(resolvedScatterWidth, 1200);
+        const height = plotNode.clientHeight || Math.max(resolvedScatterHeight, 700);
+        const imageUrl = await Plotly.toImage(plotNode, {
+          format: 'png',
+          width,
+          height,
+          scale: 2,
+        });
+        const timestamp = new Date().toISOString().replace(/[-:TZ.]/g, '').slice(0, 14);
+        const baseName = `scatter-plot-${timestamp}`;
+        if (format === 'pdf') {
+          await downloadImageAsPdf(imageUrl, baseName, { orientation: 'landscape' });
+        } else {
+          const link = document.createElement('a');
+          link.href = imageUrl;
+          link.download = `${baseName}.png`;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+        }
+      } catch (err) {
+        toast.error('散点图下载失败，请稍后重试');
+      }
+    },
+    [hasScatterData, resolvedScatterHeight, resolvedScatterWidth]
+  );
 
   const handleGeneratePreviews = async () => {
     if (!Plotly) {
@@ -2803,7 +2855,7 @@ const ScatterPage = () => {
               <div className="rounded-xl border border-slate-200 bg-white/90 p-4">
                 <h3 className="text-base font-semibold text-slate-800">数据操作</h3>
                 <p className="mt-2 text-xs text-slate-500">
-                  针对当前散点图进行聚类或保存结果。
+                  针对当前散点图进行聚类、导出或保存结果。
                 </p>
                 <div className="mt-4 space-y-2">
                   <button
@@ -2851,6 +2903,66 @@ const ScatterPage = () => {
                     </svg>
                     {isRoeGenerating ? '生成中...' : '细胞比例热图'}
                   </button>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <button
+                        type="button"
+                        disabled={!hasScatterData}
+                        className={`inline-flex w-full items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition ${
+                          !hasScatterData
+                            ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                            : 'border border-sky-200 bg-sky-50 text-sky-700 hover:bg-sky-100'
+                        }`}
+                      >
+                        <Download className="h-4 w-4" />
+                        下载散点图
+                      </button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-72 rounded-2xl border border-slate-200/80 p-3 shadow-xl" align="start">
+                      <div className="mb-3">
+                        <div className="text-sm font-semibold text-slate-800">导出当前散点图</div>
+                        <div className="mt-1 text-xs text-slate-500">保留当前页面中的显示状态与视图范围</div>
+                      </div>
+                      <div className="space-y-2">
+                        <button
+                          type="button"
+                          onClick={() => handleDownloadScatterPlot('png')}
+                          className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-3 py-3 text-left transition hover:border-sky-200 hover:bg-sky-50/70"
+                        >
+                          <span className="flex items-center gap-3">
+                            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-sky-100 text-sky-700">
+                              <ImageIcon className="h-5 w-5" />
+                            </span>
+                            <span className="flex flex-col">
+                              <span className="text-sm font-semibold text-slate-800">下载 PNG</span>
+                              <span className="text-xs text-slate-500">适合汇报截图与直接插图</span>
+                            </span>
+                          </span>
+                          <span className="rounded-full bg-sky-100 px-2 py-1 text-[11px] font-medium text-sky-700">
+                            图片
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDownloadScatterPlot('pdf')}
+                          className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-3 py-3 text-left transition hover:border-amber-200 hover:bg-amber-50/70"
+                        >
+                          <span className="flex items-center gap-3">
+                            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-100 text-amber-700">
+                              <FileText className="h-5 w-5" />
+                            </span>
+                            <span className="flex flex-col">
+                              <span className="text-sm font-semibold text-slate-800">下载 PDF</span>
+                              <span className="text-xs text-slate-500">适合归档、打印与正式提交</span>
+                            </span>
+                          </span>
+                          <span className="rounded-full bg-amber-100 px-2 py-1 text-[11px] font-medium text-amber-700">
+                            文档
+                          </span>
+                        </button>
+                      </div>
+                    </PopoverContent>
+                  </Popover>
                   <button
                     onClick={() => setIsSaveOpen(true)}
                     disabled={!hasScatterData}
